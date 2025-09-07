@@ -13,20 +13,16 @@ func messageHandler(c *qbot.Client, msg *qbot.Message) {
 		isCommand := cmds.HandleCommand(c, msg)
 		defer qbot.SaveDatabase(msg, isCommand)
 
-		// Forward non-command messages to Minecraft if RCON is enabled
-		if !isCommand {
+		if isCommand {
+			return
+		} else {
 			mc.ForwardMessageToMC(c, msg)
 		}
 
-		if isCommand {
+		if llm.NeedLLMResponse(msg) {
+			llm.LLMMsgHandle(c, msg)
 			return
 		}
-		if llm.LLMMsgHandle(c, msg) {
-			return
-		}
-		if cmds.CheckUserEvents(c, msg) {
-			return
-		}
-		customReply(c, msg)
+		cmds.CheckUserEvents(c, msg)
 	}
 }

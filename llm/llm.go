@@ -14,6 +14,19 @@ import (
 	"gorm.io/gorm"
 )
 
+func NeedLLMResponse(msg *qbot.Message) bool {
+	if strings.Contains(msg.Raw, "狐萝卜") {
+		return true
+	} else {
+		for _, item := range msg.Array {
+			if item.Type == qbot.At && item.Content == strconv.FormatUint(config.BotID, 10) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func SendLLMRequest(supplier string, messages []openai.ChatCompletionMessageParamUnion, model string, temperature float64) (*openai.ChatCompletion, error) {
 	var client *openai.Client
 
@@ -59,18 +72,7 @@ func SendLLMRequest(supplier string, messages []openai.ChatCompletionMessagePara
 	return resp, nil
 }
 
-func LLMMsgHandle(c *qbot.Client, msg *qbot.Message) bool {
-	reply := false
-	if reply = strings.Contains(msg.Raw, "狐萝卜"); !reply {
-		for _, item := range msg.Array {
-			if item.Type == qbot.At && item.Content == strconv.FormatUint(config.BotID, 10) {
-				reply = true
-			}
-		}
-	}
-	if !reply {
-		return false
-	}
+func LLMMsgHandle(c *qbot.Client, msg *qbot.Message) {
 	const prePrompt = `你是一个群聊聊天机器人，请你陪伴群友们聊天。
 1. 你的名字叫狐萝卜或狐萝bot，这个名字取自"狐robot"，人设是一只萝莉狐娘，但请不要强调这个信息。
 2. 群聊不支持 Markdown 语法，不要使用。
@@ -129,7 +131,7 @@ msg 有什么技术问题可以一起讨论哦
 
 	if err != nil || !llmCustomConfig.Enabled {
 		c.SendMsg(msg, err.Error())
-		return false
+		return
 	}
 
 	if llmCustomConfig.Supplier == "" || llmCustomConfig.Model == "" {
@@ -178,7 +180,7 @@ msg 有什么技术问题可以一起讨论哦
 		Find(&histories).Error
 
 	if err != nil {
-		return false
+		return
 	}
 
 	var userMap = make(map[uint64]UserInfo)
@@ -247,7 +249,7 @@ msg 有什么技术问题可以一起讨论哦
 	resp, err := SendLLMRequest(llmCustomConfig.Supplier, messages, llmCustomConfig.Model, 0.6)
 	if err != nil {
 		c.SendGroupMsg(msg.GroupID, err.Error(), false)
-		return false
+		return
 	}
 
 	responseContent := resp.Choices[0].Message.Content
@@ -261,7 +263,7 @@ msg 有什么技术问题可以一起讨论哦
 		c.SendPrivateMsg(config.MasterID, "命令解析错误：\n"+err.Error(), false)
 		c.SendPrivateMsg(config.MasterID, responseContent, false)
 		c.SendPrivateMsg(config.MasterID, "消息来源：\ngroup_id="+strconv.FormatUint(msg.GroupID, 10)+"\nuser_id="+strconv.FormatUint(msg.UserID, 10)+"\nmsg="+msg.Content, false)
-		return false
+		return
 	}
 
 	if resp != nil && resp.Usage.TotalTokens > 0 {
@@ -269,14 +271,6 @@ msg 有什么技术问题可以一起讨论哦
 			Where("user_id = ?", msg.UserID).
 			Update("token_usage", gorm.Expr("token_usage + ?", resp.Usage.TotalTokens))
 	}
-
-	return true
-}
-
-func formatMsg(t time.Time, name string, id uint64, msg string) string {
-	return fmt.Sprintf("[%s] %s(id:%d)说: %q\n",
-		t.In(time.FixedZone("UTC+8", 8*60*60)).Format("2006-01-02 15:04:05"),
-		name, id, msg)
 }
 
 type UserInfo struct {

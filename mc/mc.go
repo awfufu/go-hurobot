@@ -1,7 +1,6 @@
 package mc
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -9,7 +8,6 @@ import (
 	"go-hurobot/qbot"
 
 	"github.com/gorcon/rcon"
-	"gorm.io/gorm"
 )
 
 // ForwardMessageToMC forwards a group message to Minecraft server if RCON is enabled
@@ -21,15 +19,14 @@ func ForwardMessageToMC(c *qbot.Client, msg *qbot.Message) {
 
 	// Get RCON configuration for this group
 	var rconConfig qbot.GroupRconConfigs
-	result := qbot.PsqlDB.Where("group_id = ?", msg.GroupID).First(&rconConfig)
+	result := qbot.PsqlDB.Where("group_id = ?", msg.GroupID).Limit(1).Find(&rconConfig)
 
 	// Skip if RCON not configured or disabled
 	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			// Silently return if RCON not configured for this group
-			return
-		}
-		// Log other database errors if needed
+		return
+	}
+	if result.RowsAffected == 0 {
+		// Silently return if RCON not configured for this group
 		return
 	}
 
@@ -41,8 +38,8 @@ func ForwardMessageToMC(c *qbot.Client, msg *qbot.Message) {
 	var user qbot.Users
 	nickname := msg.Card // Default to group card name
 
-	userResult := qbot.PsqlDB.Where("user_id = ?", msg.UserID).First(&user)
-	if userResult.Error == nil && user.Nickname != "" {
+	userResult := qbot.PsqlDB.Where("user_id = ?", msg.UserID).Limit(1).Find(&user)
+	if userResult.Error == nil && userResult.RowsAffected > 0 && user.Nickname != "" {
 		nickname = user.Nickname
 	}
 
@@ -124,10 +121,10 @@ func getAtUserNickname(atContent string) string {
 
 	// Look up user in database
 	var user qbot.Users
-	result := qbot.PsqlDB.Where("user_id = ?", userID).First(&user)
+	result := qbot.PsqlDB.Where("user_id = ?", userID).Limit(1).Find(&user)
 
 	// Use nick_name if available, otherwise try to get group member info
-	if result.Error == nil && user.Nickname != "" {
+	if result.Error == nil && result.RowsAffected > 0 && user.Nickname != "" {
 		return user.Nickname
 	}
 
