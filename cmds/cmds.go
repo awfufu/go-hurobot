@@ -34,7 +34,6 @@ func init() {
 		"essence":      cmd_essence,
 		"draw":         cmd_draw,
 		"fx":           cmd_er,
-		"stock":        cmd_stock,
 		"crypto":       cmd_crypto,
 		"event":        cmd_event,
 		"sh":           cmd_sh,

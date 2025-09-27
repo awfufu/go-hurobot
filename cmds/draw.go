@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -15,14 +14,11 @@ import (
 )
 
 type ImageGenerationRequest struct {
-	Model             string  `json:"model"`
-	Prompt            string  `json:"prompt"`
-	NegativePrompt    string  `json:"negative_prompt,omitempty"`
-	ImageSize         string  `json:"image_size"`
-	BatchSize         int     `json:"batch_size"`
-	Seed              *int64  `json:"seed,omitempty"`
-	NumInferenceSteps int     `json:"num_inference_steps"`
-	GuidanceScale     float64 `json:"guidance_scale"`
+	Model         string  `json:"model"`
+	Prompt        string  `json:"prompt"`
+	ImageSize     string  `json:"image_size"`
+	BatchSize     int     `json:"batch_size"`
+	GuidanceScale float64 `json:"guidance_scale"`
 }
 
 type ImageGenerationResponse struct {
@@ -37,14 +33,7 @@ type ImageGenerationResponse struct {
 
 func cmd_draw(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 	if args.Size < 2 {
-		helpMsg := `Usage: draw <prompt> [options]
-
-Options:
-  --negative <负面提示词>
-  --size <尺寸> (1024x1024、1024x2048、1536x1024、1536x2048、2048x1152、1152x2048)
-  --steps <步数> (default 20)
-  --scale <引导强度> (default 7.5)
-  --seed <种子> (default random)`
+		helpMsg := `Usage: draw <prompt> [--size <1328x1328|1584x1056|1140x1472|1664x928|928x1664>]`
 		c.SendMsg(msg, helpMsg)
 		return
 	}
@@ -54,7 +43,11 @@ Options:
 		return
 	}
 
-	prompt, negativePrompt, imageSize, steps, scale, seed := parseDrawArgs(args.Contents[1:])
+	prompt, imageSize, err := parseDrawArgs(args.Contents[1:])
+	if err != nil {
+		c.SendMsg(msg, err.Error())
+		return
+	}
 
 	if prompt == "" {
 		c.SendMsg(msg, "Please provide a prompt")
@@ -64,17 +57,11 @@ Options:
 	c.SendMsg(msg, "Image generating...")
 
 	reqData := ImageGenerationRequest{
-		Model:             "Kwai-Kolors/Kolors",
-		Prompt:            prompt,
-		NegativePrompt:    negativePrompt,
-		ImageSize:         imageSize,
-		BatchSize:         1,
-		NumInferenceSteps: steps,
-		GuidanceScale:     scale,
-	}
-
-	if seed != nil {
-		reqData.Seed = seed
+		Model:         "Qwen/Qwen-Image",
+		Prompt:        prompt,
+		ImageSize:     imageSize,
+		BatchSize:     1,
+		GuidanceScale: 7.5,
 	}
 
 	jsonData, err := json.Marshal(reqData)
@@ -121,23 +108,16 @@ Options:
 	}
 
 	if len(imgResp.Images) == 0 {
-		c.SendMsg(msg, "错误: 未生成任何图片")
+		c.SendMsg(msg, "error: 未生成任何图片")
 		return
 	}
 
-	inferenceTimeMs := int(imgResp.Timings.Inference * 1000)
-	infoMsg := fmt.Sprintf("timings: %dms\nseed: %d\nscale: %f",
-		inferenceTimeMs, imgResp.Seed, scale)
-
 	imageURL := imgResp.Images[0].URL
-	c.SendMsg(msg, qbot.CQReply(msg.MsgID)+qbot.CQImage(imageURL)+infoMsg)
+	c.SendMsg(msg, qbot.CQReply(msg.MsgID)+qbot.CQImage(imageURL))
 }
 
-func parseDrawArgs(args []string) (prompt, negativePrompt, imageSize string, steps int, scale float64, seed *int64) {
-
-	imageSize = "1024x1024"
-	steps = 20
-	scale = 7.5
+func parseDrawArgs(args []string) (prompt, imageSize string, err error) {
+	imageSize = "1328x1328" // default
 
 	var promptParts []string
 	i := 0
@@ -146,49 +126,16 @@ func parseDrawArgs(args []string) (prompt, negativePrompt, imageSize string, ste
 		arg := args[i]
 
 		switch arg {
-		case "--negative":
-			if i+1 < len(args) {
-				negativePrompt = args[i+1]
-				i += 2
-			} else {
-				i++
-			}
 		case "--size":
 			if i+1 < len(args) {
 				size := args[i+1]
-				if isValidSize(size) {
-					imageSize = size
+				if !isValidSize(size) {
+					return "", "", fmt.Errorf("不支持的图片尺寸: %s\n支持的尺寸: 1328x1328, 1584x1056, 1140x1472, 1664x928, 928x1664", size)
 				}
+				imageSize = size
 				i += 2
 			} else {
-				i++
-			}
-		case "--steps":
-			if i+1 < len(args) {
-				if s, err := strconv.Atoi(args[i+1]); err == nil && s >= 1 && s <= 50 {
-					steps = s
-				}
-				i += 2
-			} else {
-				i++
-			}
-		case "--scale":
-			if i+1 < len(args) {
-				if s, err := strconv.ParseFloat(args[i+1], 64); err == nil && s >= 1.0 && s <= 20.0 {
-					scale = s
-				}
-				i += 2
-			} else {
-				i++
-			}
-		case "--seed":
-			if i+1 < len(args) {
-				if s, err := strconv.ParseInt(args[i+1], 10, 64); err == nil {
-					seed = &s
-				}
-				i += 2
-			} else {
-				i++
+				return "", "", fmt.Errorf("--size: 需要指定尺寸值")
 			}
 		default:
 			promptParts = append(promptParts, arg)
@@ -197,11 +144,11 @@ func parseDrawArgs(args []string) (prompt, negativePrompt, imageSize string, ste
 	}
 
 	prompt = strings.Join(promptParts, " ")
-	return
+	return prompt, imageSize, nil
 }
 
 func isValidSize(size string) bool {
-	validSizes := []string{"512x512", "768x768", "1024x1024", "1024x768", "768x1024"}
+	validSizes := []string{"1328x1328", "1584x1056", "1140x1472", "1664x928", "928x1664"}
 	for _, valid := range validSizes {
 		if size == valid {
 			return true
