@@ -33,6 +33,7 @@ func init() {
 		"debug":        cmd_debug,
 		"essence":      cmd_essence,
 		"draw":         cmd_draw,
+		"which":        cmd_which,
 		"fx":           cmd_er,
 		"crypto":       cmd_crypto,
 		"event":        cmd_event,
