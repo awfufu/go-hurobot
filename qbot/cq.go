@@ -15,11 +15,19 @@ func CQPoke(userId uint64) string {
 }
 
 func CQRecord(text string) string {
-	return fmt.Sprintf("[CQ:record,file=https://akashi.top/tts-file-cache/%s]", text)
+	return fmt.Sprintf("[CQ:record,file=file:///app/data/record/%s]", text)
 }
 
 func CQImage(url string) string {
 	return fmt.Sprintf("[CQ:image,sub_type=0,url=%s]", url)
+}
+
+func CQImageFromFile(file string) string {
+	return fmt.Sprintf("[CQ:image,file=%s]", file)
+}
+
+func CQFile(file string) string {
+	return fmt.Sprintf("[CQ:file,file=%s]", file)
 }
 
 func CQRps() string {
