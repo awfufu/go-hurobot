@@ -46,13 +46,19 @@ type GroupRconConfigs struct {
 	Enabled  bool   `gorm:"not null;column:enabled;default:false"`
 }
 
+type LegacyGame struct {
+	UserID  uint64 `gorm:"primaryKey;column:user_id"`
+	Energy  int    `gorm:"not null;column:energy;default:0"`
+	Balance int    `gorm:"not null;column:balance;default:0"`
+}
+
 func initPsqlDB(dsn string) error {
 	var err error
 	if PsqlDB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{}); err != nil {
 		return err
 	}
 	PsqlConnected = true
-	return PsqlDB.AutoMigrate(&Users{}, &Messages{}, &UserEvents{}, &GroupRconConfigs{})
+	return PsqlDB.AutoMigrate(&Users{}, &Messages{}, &UserEvents{}, &GroupRconConfigs{}, &LegacyGame{})
 }
 
 func SaveDatabase(msg *Message, isCmd bool) error {

@@ -3,6 +3,7 @@ package main
 import (
 	"go-hurobot/cmds"
 	"go-hurobot/config"
+	"go-hurobot/legacy"
 	"go-hurobot/llm"
 	"go-hurobot/mc"
 	"go-hurobot/qbot"
@@ -23,6 +24,12 @@ func messageHandler(c *qbot.Client, msg *qbot.Message) {
 			llm.LLMMsgHandle(c, msg)
 			return
 		}
-		cmds.CheckUserEvents(c, msg)
+		if legacy.IsGameCommand(msg) {
+			legacy.GameCommandHandle(c, msg)
+			return
+		}
+		if cmds.CheckUserEvents(c, msg) {
+			return
+		}
 	}
 }

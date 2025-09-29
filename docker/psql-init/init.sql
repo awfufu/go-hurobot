@@ -65,4 +65,12 @@ CREATE TABLE group_rcon_configs (
 );
 
 INSERT INTO suppliers ("name", "base_url", "api_key", "default_model") VALUES
-('siliconflow', 'https://api.siliconflow.cn/v1', '', 'deepseek-ai/DeepSeek-V3');
+('siliconflow', 'https://api.siliconflow.cn/v1', '', 'deepseek-ai/DeepSeek-V3.1');
+
+CREATE TABLE legacy_game (
+    "user_id" BIGINT NOT NULL,
+    "energy"  INT NOT NULL DEFAULT 0,
+    "balance" INT NOT NULL DEFAULT 0,
+    PRIMARY KEY ("user_id"),
+    FOREIGN KEY ("user_id") REFERENCES users(user_id)
+)
