@@ -2,46 +2,66 @@ package cmds
 
 import (
 	"go-hurobot/qbot"
-	"strconv"
+	"strings"
 )
 
-func cmd_callme(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
+var callmeHelpMsg string = `Set or query your nickname.
+Usage:
+ /callme
+ /callme <nickname>
+ /callme <@user>
+ /callme <@user> <nickname>`
+
+type CallmeCommand struct {
+	cmdBase
+}
+
+func NewCallmeCommand() *CallmeCommand {
+	return &CallmeCommand{
+		cmdBase: cmdBase{
+			Name:        "callme",
+			HelpMsg:     callmeHelpMsg,
+			Permission:  getCmdPermLevel("callme"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+			MaxArgs:     3, // callme <nickname> <@id>
+			MinArgs:     1, // callme
+		},
+	}
+}
+
+func (cmd *CallmeCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *CallmeCommand) Exec(c *qbot.Client, args []string, src *srcMsg, _ int) {
 	var targetID uint64
 	var nickname string
 	var isQuery bool = true
 
-	switch args.Size {
+	switch len(args) {
 	case 1: // callme
-		targetID = msg.UserID
+		targetID = src.UserID
 	case 2: // callme <nickname> / callme <@id>
-		if args.Types[1] == qbot.At {
+		if strings.HasPrefix(args[1], "--at=") {
 			// callme <@id>
-			targetID = str2uin64(args.Contents[1])
+			targetID = str2uin64(strings.TrimPrefix(args[1], "--at="))
 		} else {
 			// callme <nickname>
-			targetID = msg.UserID
-			nickname = args.Contents[1]
+			targetID = src.UserID
+			nickname = args[1]
 			isQuery = false
 		}
-	case 3: // callme <@id> <nickname> 或 callme <nickname> <@id>
+	case 3: // callme <nickname> <@id>
 		isQuery = false
-		if args.Types[1] == qbot.At {
-			// callme <@id> <nickname>
-			targetID = str2uin64(args.Contents[1])
-			nickname = args.Contents[2]
-		} else if args.Types[2] == qbot.At {
-			// callme <nickname> <@id>
-			targetID = str2uin64(args.Contents[2])
-			nickname = args.Contents[1]
+		if userid, ok := strings.CutPrefix(args[2], "--at="); ok {
+			targetID = str2uin64(userid)
+			nickname = args[1]
 		} else {
 			return
 		}
 	default:
-		c.SendMsg(msg, `Usage:
-		- callme
-		- callme <nickname>
-		- callme <@id>
-		- callme <@id> <nickname>`)
+		c.SendMsg(src.GroupID, src.UserID, callmeHelpMsg)
 		return
 	}
 
@@ -49,14 +69,14 @@ func cmd_callme(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 		var user qbot.Users
 		result := qbot.PsqlDB.Where("user_id = ?", targetID).First(&user)
 		if result.Error != nil || user.Nickname == "" {
-			c.SendMsg(msg, "")
+			c.SendMsg(src.GroupID, src.UserID, "")
 			return
 		}
-		c.SendMsg(msg, user.Nickname)
+		c.SendMsg(src.GroupID, src.UserID, user.Nickname)
 	} else {
 		user := qbot.Users{
 			UserID:   targetID,
-			Name:     msg.Nickname,
+			Name:     nickname,
 			Nickname: nickname,
 		}
 
@@ -65,13 +85,13 @@ func cmd_callme(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 		).FirstOrCreate(&user)
 
 		if result.Error != nil {
-			c.SendMsg(msg, "failed")
+			c.SendMsg(src.GroupID, src.UserID, "failed")
 			return
 		}
-		if targetID == msg.UserID {
-			c.SendMsg(msg, "Update nickname: "+nickname)
+		if targetID == src.UserID {
+			c.SendMsg(src.GroupID, src.UserID, "Update nickname: "+nickname)
 		} else {
-			c.SendMsg(msg, "Update nickname for "+strconv.FormatUint(targetID, 10)+": "+nickname)
+			c.SendMsg(src.GroupID, src.UserID, "Update nickname for ["+qbot.CQAt(targetID)+"]: "+nickname)
 		}
 	}
 }

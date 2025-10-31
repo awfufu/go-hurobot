@@ -3,42 +3,69 @@ package cmds
 import (
 	"fmt"
 	"go-hurobot/qbot"
+	"strings"
 	"time"
 )
 
-func cmd_memberinfo(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
-	// 只能在群聊中使用
-	if msg.GroupID == 0 {
+const memberinfoHelpMsg string = `Query group member information.
+Usage: /memberinfo [@user]
+Example: /memberinfo @user`
+
+type MemberinfoCommand struct {
+	cmdBase
+}
+
+func NewMemberinfoCommand() *MemberinfoCommand {
+	return &MemberinfoCommand{
+		cmdBase: cmdBase{
+			Name:        "memberinfo",
+			HelpMsg:     memberinfoHelpMsg,
+			Permission:  getCmdPermLevel("memberinfo"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+			MaxArgs:     2,
+			MinArgs:     2,
+		},
+	}
+}
+
+func (cmd *MemberinfoCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *MemberinfoCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+	// Only available in group chats
+	if src.GroupID == 0 {
 		return
 	}
 
 	var targetUserID uint64
 
-	if args.Size >= 2 && args.Types[1] == qbot.At {
-		targetUserID = str2uin64(args.Contents[1])
+	if len(args) >= 2 && strings.HasPrefix(args[1], "--at=") {
+		targetUserID = str2uin64(strings.TrimPrefix(args[1], "--at="))
 	} else {
-		targetUserID = msg.UserID
+		targetUserID = src.UserID
 	}
 
 	if targetUserID == 0 {
-		c.SendReplyMsg(msg, "Invalid user ID")
+		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+"Invalid user ID")
 		return
 	}
 
-	// 获取群成员信息
-	memberInfo, err := c.GetGroupMemberInfo(msg.GroupID, targetUserID, false)
+	// Get group member information
+	memberInfo, err := c.GetGroupMemberInfo(src.GroupID, targetUserID, false)
 	if err != nil {
-		c.SendReplyMsg(msg, fmt.Sprintf("Failed to get member info: %v", err))
+		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+fmt.Sprintf("Failed to get member info: %v", err))
 		return
 	}
 
 	response := fmt.Sprintf(
-		"QQ号: %d\n"+
-			"昵称: %s\n"+
-			"名片: %s\n"+
-			"性别: %s\n"+
-			"权限: %s\n"+
-			"等级: Lv %s",
+		"QQ: %d\n"+
+			"Nickname: %s\n"+
+			"Card: %s\n"+
+			"Gender: %s\n"+
+			"Role: %s\n"+
+			"Level: Lv %s",
 		memberInfo.UserID,
 		memberInfo.Nickname,
 		getCardOrNickname(memberInfo.Card, memberInfo.Nickname),
@@ -47,30 +74,30 @@ func cmd_memberinfo(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 		memberInfo.Level)
 
 	if memberInfo.Age > 0 {
-		response += fmt.Sprintf("\n年龄: %d", memberInfo.Age)
+		response += fmt.Sprintf("\nAge: %d", memberInfo.Age)
 	}
 
 	if memberInfo.Area != "" {
-		response += fmt.Sprintf("\n地区: %s", memberInfo.Area)
+		response += fmt.Sprintf("\nArea: %s", memberInfo.Area)
 	}
 
 	if memberInfo.Title != "" {
-		response += fmt.Sprintf("\n头衔: %s", memberInfo.Title)
+		response += fmt.Sprintf("\nTitle: %s", memberInfo.Title)
 	}
 
 	if memberInfo.ShutUpTimestamp > 0 {
 		shutUpTime := time.Unix(memberInfo.ShutUpTimestamp, 0)
 		if shutUpTime.After(time.Now()) {
-			response += fmt.Sprintf("\n禁言到期: %s", shutUpTime.Format("2006-01-02 15:04:05"))
+			response += fmt.Sprintf("\nMuted until: %s", shutUpTime.Format("2006-01-02 15:04:05"))
 		}
 	}
 
 	if memberInfo.JoinTime > 0 {
 		joinTime := time.Unix(int64(memberInfo.JoinTime), 0)
-		response += fmt.Sprintf("\n加群时间: %s", joinTime.Format("2006-01-02 15:04:05"))
+		response += fmt.Sprintf("\nJoined: %s", joinTime.Format("2006-01-02 15:04:05"))
 	}
 
-	c.SendReplyMsg(msg, response)
+	c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+response)
 }
 
 func getCardOrNickname(card, nickname string) string {
@@ -94,11 +121,11 @@ func getSexString(sex string) string {
 func getRoleString(role string) string {
 	switch role {
 	case "owner":
-		return "👑群主"
+		return "Owner"
 	case "admin":
-		return "管理员"
+		return "Admin"
 	case "member":
-		return "🐱成员"
+		return "Member"
 	default:
 		return role
 	}

@@ -2,14 +2,18 @@ package main
 
 import (
 	"fmt"
+	"go-hurobot/config"
+	"go-hurobot/qbot"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"go-hurobot/qbot"
 )
 
 func main() {
+	// 初始化配置
+	config.LoadConfigFile()
+	qbot.InitDB()
+
 	bot := qbot.NewClient()
 	defer bot.Close()
 

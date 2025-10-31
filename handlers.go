@@ -10,14 +10,14 @@ import (
 )
 
 func messageHandler(c *qbot.Client, msg *qbot.Message) {
-	if msg.UserID != config.BotID {
+	if msg.UserID != config.Cfg.Permissions.BotID {
 		isCommand := cmds.HandleCommand(c, msg)
 		defer qbot.SaveDatabase(msg, isCommand)
 
+		mc.ForwardMessageToMC(c, msg)
+
 		if isCommand {
 			return
-		} else {
-			mc.ForwardMessageToMC(c, msg)
 		}
 
 		if llm.NeedLLMResponse(msg) {
@@ -26,9 +26,6 @@ func messageHandler(c *qbot.Client, msg *qbot.Message) {
 		}
 		if legacy.IsGameCommand(msg) {
 			legacy.GameCommandHandle(c, msg)
-			return
-		}
-		if cmds.CheckUserEvents(c, msg) {
 			return
 		}
 	}

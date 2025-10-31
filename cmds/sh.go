@@ -2,7 +2,6 @@ package cmds
 
 import (
 	"fmt"
-	"go-hurobot/config"
 	"go-hurobot/qbot"
 	"log"
 	"os/exec"
@@ -10,14 +9,18 @@ import (
 	"time"
 )
 
+const shHelpMsg string = `Execute shell commands.
+Usage: /sh <command>
+Example: /sh ls -la`
+
 var workingDir string = "/tmp"
 
 func truncateString(s string) string {
 	s = encodeSpecialChars(s)
 	const (
-		maxLines    = 10
-		maxChars    = 500
-		truncateMsg = "\n输出过长，已自动截断"
+		maxLines    = 20
+		maxChars    = 1024
+		truncateMsg = "... (truncated)"
 	)
 
 	lineCount := strings.Count(s, "\n") + 1
@@ -40,42 +43,59 @@ func truncateString(s string) string {
 	return s
 }
 
-func cmd_sh(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
-	if msg.UserID != config.MasterID {
+type ShCommand struct {
+	cmdBase
+}
+
+func NewShCommand() *ShCommand {
+	return &ShCommand{
+		cmdBase: cmdBase{
+			Name:        "sh",
+			HelpMsg:     shHelpMsg,
+			Permission:  getCmdPermLevel("sh"),
+			AllowPrefix: false,
+			NeedRawMsg:  true,
+			MinArgs:     2,
+		},
+	}
+}
+
+func (cmd *ShCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *ShCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+	if len(args) <= 1 {
+		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+cmd.HelpMsg)
 		return
 	}
 
-	if args.Size <= 1 {
-		c.SendReplyMsg(msg, "Usage: sh <command>")
-		return
-	}
+	rawcmd := decodeSpecialChars(src.Raw)
 
-	rawcmd := decodeSpecialChars(msg.Raw[3:])
-
-	if strings.HasPrefix(args.Contents[1], "cd") {
+	if strings.HasPrefix(args[1], "cd") {
 		absPath, err := exec.Command("bash", "-c",
 			fmt.Sprintf("cd %s && %s && pwd", workingDir, rawcmd)).CombinedOutput()
 
 		if err != nil {
-			c.SendReplyMsg(msg, err.Error())
+			c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+err.Error())
 			return
 		}
 
 		workingDir = strings.TrimSpace(string(absPath))
-		c.SendReplyMsg(msg, workingDir)
+		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+workingDir)
 		return
 	}
 
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("cd %s && %s", workingDir, rawcmd))
+	shellCmd := exec.Command("bash", "-c", fmt.Sprintf("cd %s && %s", workingDir, rawcmd))
 
 	done := make(chan error, 1)
 	var output []byte
 
 	go func() {
 		var err error
-		output, err = cmd.CombinedOutput()
+		output, err = shellCmd.CombinedOutput()
 		log.Printf("run command: %s, output: %s, error: %v",
-			strings.Join(args.Contents[1:], " "), string(output), err)
+			strings.Join(args[1:], " "), string(output), err)
 		done <- err
 	}()
 
@@ -83,13 +103,13 @@ func cmd_sh(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 	case err := <-done:
 		if err == nil {
 			// success
-			c.SendReplyMsg(msg, truncateString(string(output)))
+			c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+truncateString(string(output)))
 		} else {
 			// failed
-			c.SendReplyMsg(msg, fmt.Sprintf("%v\n%s", err, truncateString(string(output))))
+			c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+fmt.Sprintf("%v\n%s", err, truncateString(string(output))))
 		}
 	case <-time.After(300 * time.Second):
-		cmd.Process.Kill()
-		c.SendReplyMsg(msg, fmt.Sprintf("Timeout: %q", rawcmd))
+		shellCmd.Process.Kill()
+		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+fmt.Sprintf("Timeout: %q", rawcmd))
 	}
 }

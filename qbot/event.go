@@ -2,6 +2,7 @@ package qbot
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 )
 
@@ -50,40 +51,74 @@ func parseMsgJson(raw *messageJson) *Message {
 	}
 	for _, msg := range raw.Message {
 		var jsonData map[string]any
-		if json.Unmarshal([]byte(msg.Data), &jsonData) != nil {
-			return nil
+		if err := json.Unmarshal(msg.Data, &jsonData); err != nil {
+			log.Printf("解析消息数据失败: %v, 原始数据: %s", err, string(msg.Data))
+			continue
 		}
 		switch msg.Type {
 		case "text":
-			result.Array = append(result.Array, MsgItem{
-				Type:    Text,
-				Content: jsonData["text"].(string),
-			})
+			if text, ok := jsonData["text"].(string); ok {
+				result.Array = append(result.Array, MsgItem{
+					Type:    Text,
+					Content: text,
+				})
+			}
 		case "at":
-			result.Array = append(result.Array, MsgItem{
-				Type:    At,
-				Content: jsonData["qq"].(string),
-			})
+			// qq 可能是 string 或 number
+			var qqStr string
+			if qq, ok := jsonData["qq"].(string); ok {
+				qqStr = qq
+			} else if qq, ok := jsonData["qq"].(float64); ok {
+				qqStr = fmt.Sprintf("%.0f", qq)
+			}
+			if qqStr != "" {
+				result.Array = append(result.Array, MsgItem{
+					Type:    At,
+					Content: qqStr,
+				})
+			}
 		case "face":
-			result.Array = append(result.Array, MsgItem{
-				Type:    Face,
-				Content: jsonData["id"].(string),
-			})
+			// id 可能是 string 或 number
+			var idStr string
+			if id, ok := jsonData["id"].(string); ok {
+				idStr = id
+			} else if id, ok := jsonData["id"].(float64); ok {
+				idStr = fmt.Sprintf("%.0f", id)
+			}
+			if idStr != "" {
+				result.Array = append(result.Array, MsgItem{
+					Type:    Face,
+					Content: idStr,
+				})
+			}
 		case "image":
-			result.Array = append(result.Array, MsgItem{
-				Type:    Image,
-				Content: jsonData["url"].(string),
-			})
+			if url, ok := jsonData["url"].(string); ok {
+				result.Array = append(result.Array, MsgItem{
+					Type:    Image,
+					Content: url,
+				})
+			}
 		case "record":
-			result.Array = append(result.Array, MsgItem{
-				Type:    Record,
-				Content: jsonData["path"].(string),
-			})
+			if path, ok := jsonData["path"].(string); ok {
+				result.Array = append(result.Array, MsgItem{
+					Type:    Record,
+					Content: path,
+				})
+			}
 		case "reply":
-			result.Array = append(result.Array, MsgItem{
-				Type:    Reply,
-				Content: jsonData["id"].(string),
-			})
+			// reply 的 id 可能是 string 或 number
+			var replyId string
+			if id, ok := jsonData["id"].(string); ok {
+				replyId = id
+			} else if id, ok := jsonData["id"].(float64); ok {
+				replyId = fmt.Sprintf("%.0f", id)
+			}
+			if replyId != "" {
+				result.Array = append(result.Array, MsgItem{
+					Type:    Reply,
+					Content: replyId,
+				})
+			}
 		case "file":
 			result.Array = append(result.Array, MsgItem{
 				Type:    File,

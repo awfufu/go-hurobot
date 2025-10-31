@@ -67,157 +67,176 @@ type TickerResp struct {
 	} `json:"data"`
 }
 
-func cmd_crypto(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
-	if args.Size < 2 {
-		c.SendMsg(msg, "用法:\n1.crypto <币种> - 查询币种对USDT价格\n2.crypto <源币种> <目标币种> - 查询币种对目标货币价格\n例如: crypto BTC 或 crypto BTC USD")
-		return
-	}
+const cryptoHelpMsg string = `Query cryptocurrency prices.
+Usage:
+  /crypto <coin>                 - Query coin price in USDT
+  /crypto <from_coin> <to_coin>  - Query coin price in target currency
+Examples:
+  /crypto BTC
+  /crypto BTC USD`
 
-	if args.Size == 2 {
-		coin := strings.ToUpper(args.Contents[1])
-		handleSingleCrypto(c, msg, coin)
-		return
-	}
-
-	if args.Size == 3 {
-		fromCoin := strings.ToUpper(args.Contents[1])
-		toCurrency := strings.ToUpper(args.Contents[2])
-		handleCryptoCurrencyPair(c, msg, fromCoin, toCurrency)
-		return
-	}
-
-	c.SendMsg(msg, "参数数量错误")
+type CryptoCommand struct {
+	cmdBase
 }
 
-func handleSingleCrypto(c *qbot.Client, msg *qbot.Message, coin string) {
-	log.Printf("查询单个加密货币: %s", coin)
+func NewCryptoCommand() *CryptoCommand {
+	return &CryptoCommand{
+		cmdBase: cmdBase{
+			Name:        "crypto",
+			HelpMsg:     cryptoHelpMsg,
+			Permission:  getCmdPermLevel("crypto"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+			MaxArgs:     3,
+			MinArgs:     2,
+		},
+	}
+}
+
+func (cmd *CryptoCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *CryptoCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+	if len(args) == 2 {
+		coin := strings.ToUpper(args[1])
+		handleSingleCrypto(c, src, coin)
+	} else if len(args) == 3 {
+		fromCoin := strings.ToUpper(args[1])
+		toCurrency := strings.ToUpper(args[2])
+		handleCryptoCurrencyPair(c, src, fromCoin, toCurrency)
+	}
+}
+
+func handleSingleCrypto(c *qbot.Client, src *srcMsg, coin string) {
+	log.Printf("Query single cryptocurrency: %s", coin)
 	price, err := getCryptoPrice(coin, "USDT")
 	if err != nil {
-		log.Printf("查询%s价格失败: %v", coin, err)
-		c.SendMsg(msg, fmt.Sprintf("查询失败: %s", err.Error()))
+		log.Printf("Failed to query %s price: %v", coin, err)
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Query failed: %s", err.Error()))
 		return
 	}
-	c.SendMsg(msg, fmt.Sprintf("1 %s = %s USDT", coin, price))
+	c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("1 %s = %s USDT", coin, price))
 }
 
-func handleCryptoCurrencyPair(c *qbot.Client, msg *qbot.Message, fromCoin string, toCurrency string) {
-	log.Printf("查询加密货币对: %s -> %s", fromCoin, toCurrency)
+func handleCryptoCurrencyPair(c *qbot.Client, src *srcMsg, fromCoin string, toCurrency string) {
+	log.Printf("Query cryptocurrency pair: %s -> %s", fromCoin, toCurrency)
 
 	usdPrice, err := getCryptoPrice(fromCoin, "USD")
 	if err != nil {
-		log.Printf("查询%s USD价格失败: %v", fromCoin, err)
-		c.SendMsg(msg, fmt.Sprintf("查询%s价格失败: %s", fromCoin, err.Error()))
+		log.Printf("Failed to query %s USD price: %v", fromCoin, err)
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Failed to query %s price: %s", fromCoin, err.Error()))
 		return
 	}
 
 	usdPriceFloat, err := strconv.ParseFloat(usdPrice, 64)
 	if err != nil {
-		log.Printf("价格解析失败: %v", err)
-		c.SendMsg(msg, fmt.Sprintf("价格解析失败: %s", err.Error()))
+		log.Printf("Price parsing failed: %v", err)
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Price parsing failed: %s", err.Error()))
 		return
 	}
 
 	if toCurrency == "USD" {
-		c.SendMsg(msg, fmt.Sprintf("%s 最新USD价格: %.4f", fromCoin, usdPriceFloat))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%s latest USD price: %.4f", fromCoin, usdPriceFloat))
 		return
 	}
 
-	log.Printf("需要汇率换算: USD -> %s", toCurrency)
+	log.Printf("Need exchange rate conversion: USD -> %s", toCurrency)
 	exchangeRate, err := getExchangeRate("USD", toCurrency)
 	if err != nil {
-		log.Printf("获取汇率失败: %v", err)
-		c.SendMsg(msg, fmt.Sprintf("获取汇率失败: %s", err.Error()))
+		log.Printf("Failed to get exchange rate: %v", err)
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Failed to get exchange rate: %s", err.Error()))
 		return
 	}
 
 	finalPrice := usdPriceFloat * exchangeRate
-	log.Printf("换算完成: %s USD价格 %.4f, 汇率 %.4f, 最终价格 %.4f %s", fromCoin, usdPriceFloat, exchangeRate, finalPrice, toCurrency)
-	c.SendMsg(msg, fmt.Sprintf("1 %s=%.4f %s", fromCoin, finalPrice, toCurrency))
+	log.Printf("Conversion complete: %s USD price %.4f, exchange rate %.4f, final price %.4f %s", fromCoin, usdPriceFloat, exchangeRate, finalPrice, toCurrency)
+	c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("1 %s=%.4f %s", fromCoin, finalPrice, toCurrency))
 }
 
 func getCryptoPrice(coin string, quoteCurrency string) (string, error) {
 	instId := coin + "-" + quoteCurrency + "-SWAP"
 	url := "https://bot-forward.lavacreeper.net/api/v5/market/ticker?instId=" + instId
 
-	log.Printf("请求加密货币价格: %s", url)
+	log.Printf("Request cryptocurrency price: %s", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("请求创建失败: %v", err)
+		return "", fmt.Errorf("request creation failed: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Okx-Python-Client")
-	req.Header.Set("X-API-Key", config.OkxMirrorAPIKey)
+	req.Header.Set("X-API-Key", config.Cfg.ApiKeys.OkxMirrorAPIKey)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("请求失败: %v", err)
+		return "", fmt.Errorf("request failed: %v", err)
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Printf("关闭响应体失败: %v", err)
+			log.Printf("Failed to close response body: %v", err)
 		}
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP错误: %d", resp.StatusCode)
+		return "", fmt.Errorf("HTTP error: %d", resp.StatusCode)
 	}
 
 	var ticker TickerResp
 	if err := json.NewDecoder(resp.Body).Decode(&ticker); err != nil {
-		return "", fmt.Errorf("解析失败: %v", err)
+		return "", fmt.Errorf("parsing failed: %v", err)
 	}
 
 	if ticker.Code != "0" || len(ticker.Data) == 0 {
-		return "", fmt.Errorf("API返回错误: %s", ticker.Msg)
+		return "", fmt.Errorf("API returned error: %s", ticker.Msg)
 	}
 
-	log.Printf("获取到价格: %s = %s", instId, ticker.Data[0].Last)
+	log.Printf("Got price: %s = %s", instId, ticker.Data[0].Last)
 	return ticker.Data[0].Last, nil
 }
 
 func getExchangeRate(baseCode string, targetCode string) (float64, error) {
-	if config.ExchangeRateAPIKey == "" {
-		return 0, fmt.Errorf("汇率API密钥未配置")
+	if config.Cfg.ApiKeys.ExchangeRateAPIKey == "" {
+		return 0, fmt.Errorf("exchange rate API key not configured")
 	}
 
-	url := fmt.Sprintf("https://v6.exchangerate-api.com/v6/%s/latest/%s", config.ExchangeRateAPIKey, baseCode)
+	url := fmt.Sprintf("https://v6.exchangerate-api.com/v6/%s/latest/%s", config.Cfg.ApiKeys.ExchangeRateAPIKey, baseCode)
 
-	log.Printf("请求汇率: %s", url)
+	log.Printf("Request exchange rate: %s", url)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return 0, fmt.Errorf("汇率请求失败: %v", err)
+		return 0, fmt.Errorf("exchange rate request failed: %v", err)
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Printf("关闭响应体失败: %v", err)
+			log.Printf("Failed to close response body: %v", err)
 		}
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("汇率API HTTP错误: %d", resp.StatusCode)
+		return 0, fmt.Errorf("exchange rate API HTTP error: %d", resp.StatusCode)
 	}
 
 	var exchangeData ExchangeRateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&exchangeData); err != nil {
-		return 0, fmt.Errorf("汇率数据解析失败: %v", err)
+		return 0, fmt.Errorf("exchange rate data parsing failed: %v", err)
 	}
 
 	if exchangeData.Result != "success" {
-		return 0, fmt.Errorf("汇率API返回错误: %s", exchangeData.Result)
+		return 0, fmt.Errorf("exchange rate API returned error: %s", exchangeData.Result)
 	}
 
 	rate, exists := exchangeData.ConversionRates[targetCode]
 	if !exists {
-		return 0, fmt.Errorf("不支持的货币: %s", targetCode)
+		return 0, fmt.Errorf("unsupported currency: %s", targetCode)
 	}
 
-	log.Printf("获取到汇率: 1 %s = %f %s", baseCode, rate, targetCode)
+	log.Printf("Got exchange rate: 1 %s = %f %s", baseCode, rate, targetCode)
 	return rate, nil
 }

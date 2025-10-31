@@ -3,27 +3,47 @@ package cmds
 import (
 	"database/sql"
 	"fmt"
-	"go-hurobot/config"
 	"go-hurobot/qbot"
 	"strings"
 )
 
-func cmd_psql(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
-	if raw.UserID != config.MasterID {
-		c.SendMsg(raw, fmt.Sprintf("%s: Permission denied", args.Contents[0]))
-		return
-	}
+const psqlHelpMsg = `Execute PostgreSQL queries.
+Usage: /psql <query>
+Example: /psql SELECT * FROM users LIMIT 10`
 
-	rows, err := qbot.PsqlDB.Raw(decodeSpecialChars(raw.Raw[5:])).Rows()
+type PsqlCommand struct {
+	cmdBase
+}
+
+func NewPsqlCommand() *PsqlCommand {
+	return &PsqlCommand{
+		cmdBase: cmdBase{
+			Name:        "psql",
+			HelpMsg:     psqlHelpMsg,
+			Permission:  getCmdPermLevel("psql"),
+			AllowPrefix: false,
+			NeedRawMsg:  true, // uses raw message
+			MinArgs:     2,
+		},
+	}
+}
+
+func (cmd *PsqlCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *PsqlCommand) Exec(c *qbot.Client, args []string, src *srcMsg, _ int) {
+	query := args[len(args)-1]
+	rows, err := qbot.PsqlDB.Raw(decodeSpecialChars(query)).Rows()
 	if err != nil {
-		c.SendMsg(raw, err.Error())
+		c.SendMsg(src.GroupID, src.UserID, err.Error())
 		return
 	}
 	defer rows.Close()
 
 	columns, err := rows.Columns()
 	if err != nil {
-		c.SendMsg(raw, err.Error())
+		c.SendMsg(src.GroupID, src.UserID, err.Error())
 		return
 	}
 
@@ -41,7 +61,7 @@ func cmd_psql(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
 		}
 
 		if err := rows.Scan(values...); err != nil {
-			c.SendMsg(raw, err.Error())
+			c.SendMsg(src.GroupID, src.UserID, err.Error())
 			return
 		}
 
@@ -58,10 +78,10 @@ func cmd_psql(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
 		count++
 	}
 	if err = rows.Err(); err != nil {
-		c.SendMsg(raw, err.Error())
+		c.SendMsg(src.GroupID, src.UserID, err.Error())
 	} else if result == "" {
-		c.SendMsg(raw, "[]")
+		c.SendMsg(src.GroupID, src.UserID, "[]")
 	} else {
-		c.SendMsg(raw, result)
+		c.SendMsg(src.GroupID, src.UserID, encodeSpecialChars(result))
 	}
 }

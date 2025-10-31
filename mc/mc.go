@@ -13,7 +13,7 @@ import (
 // ForwardMessageToMC forwards a group message to Minecraft server if RCON is enabled
 func ForwardMessageToMC(c *qbot.Client, msg *qbot.Message) {
 	// Skip bot's own messages
-	if msg.UserID == config.BotID {
+	if msg.UserID == config.Cfg.Permissions.BotID {
 		return
 	}
 

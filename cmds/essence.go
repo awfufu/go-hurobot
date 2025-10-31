@@ -5,32 +5,65 @@ import (
 	"go-hurobot/qbot"
 	"slices"
 	"strconv"
+	"strings"
 )
 
-func cmd_essence(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
-	if !slices.Contains(config.BotOwnerGroupIDs, raw.GroupID) {
+const essenceHelpMsg string = `Manage essence messages.
+Usage: [Reply to a message] /essence [add|rm]`
+
+type EssenceCommand struct {
+	cmdBase
+}
+
+func NewEssenceCommand() *EssenceCommand {
+	return &EssenceCommand{
+		cmdBase: cmdBase{
+			Name:        "essence",
+			HelpMsg:     essenceHelpMsg,
+			Permission:  getCmdPermLevel("essence"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+		},
+	}
+}
+
+func (cmd *EssenceCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *EssenceCommand) Exec(c *qbot.Client, args []string, src *srcMsg, _ int) {
+	if !slices.Contains(config.Cfg.Permissions.BotOwnerGroupIDs, src.GroupID) {
 		return
 	}
-	help := "请回复一条消息，再使用 essence [set|delete]"
-	if raw.Array[0].Type != qbot.Reply {
-		c.SendMsg(raw, help)
-		return
-	}
-	msgID, err := strconv.ParseUint(raw.Array[0].Content, 10, 64)
-	if err != nil {
-		return
-	}
-	if args.Size == 2 {
-		if args.Contents[1] == "delete" {
-			c.DeleteGroupEssence(msgID)
-		} else if args.Contents[1] == "set" {
-			c.SetGroupEssence(msgID)
-		} else {
-			c.SendMsg(raw, help)
+
+	// 查找 --reply= 参数
+	var msgID uint64
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--reply=") {
+			if id, err := strconv.ParseUint(strings.TrimPrefix(arg, "--reply="), 10, 64); err == nil {
+				msgID = id
+				break
+			}
 		}
-	} else if args.Size == 1 {
+	}
+
+	if msgID == 0 {
+		c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
+		return
+	}
+
+	if len(args) == 2 {
+		switch args[1] {
+		case "rm":
+			c.DeleteGroupEssence(msgID)
+		case "add":
+			c.SetGroupEssence(msgID)
+		default:
+			c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
+		}
+	} else if len(args) == 1 {
 		c.SetGroupEssence(msgID)
 	} else {
-		c.SendMsg(raw, help)
+		c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
 	}
 }

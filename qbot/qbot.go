@@ -2,187 +2,173 @@
 package qbot
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"strconv"
+	"net/http"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 
 	"go-hurobot/config"
 )
 
-func init() {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		config.PsqlHost, strconv.Itoa(int(config.PsqlPort)), config.PsqlUser, config.PsqlPassword, config.PsqlDbName)
-	if err := initPsqlDB(dsn); err != nil {
-		log.Fatalln(err)
-	}
-}
-
 func NewClient() *Client {
 	client := &Client{
-		config: &Config{
-			Address:      config.NapcatWSURL,
-			Reconnect:    3 * time.Second,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
 		},
-		retryCount: 0,
-		stopChan:   make(chan bool),
 	}
-	go client.connect()
+
+	// 启动反向 HTTP 服务器
+	go client.startHTTPServer()
+
+	log.Printf("正向 HTTP 地址: %s", config.Cfg.NapcatHttpServer)
+	log.Printf("反向 HTTP 监听: http://%s", config.Cfg.ReverseHttpServer)
+
 	return client
 }
 
 func (c *Client) Close() {
-	if c.conn != nil {
-		c.conn.Close()
-	}
-	if c.stopChan != nil {
-		close(c.stopChan)
+	if c.server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := c.server.Shutdown(ctx); err != nil {
+			log.Printf("HTTP server shutdown error: %v", err)
+		}
 	}
 }
 
-func (c *Client) connect() {
-	for {
-		select {
-		case <-c.stopChan:
-			return
-		default:
-			// TODO
-		}
+// 启动反向 HTTP 服务器，接收 NapCat 推送的消息
+func (c *Client) startHTTPServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", c.handleHTTPEvent)
 
-		dialer := websocket.Dialer{
-			ReadBufferSize:   4096,
-			WriteBufferSize:  4096,
-			HandshakeTimeout: c.config.ReadTimeout,
-		}
-		conn, _, err := dialer.Dial(c.config.Address, nil)
-		if err != nil {
-			log.Printf("Connect failed (%d): %v", c.retryCount+1, err)
-			c.retryCount++
-			time.Sleep(c.config.Reconnect)
-			continue
-		}
+	c.server = &http.Server{
+		Addr:         config.Cfg.ReverseHttpServer,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
 
-		conn.SetPongHandler(func(string) error {
-			c.retryCount = 0
-			return nil
-		})
+	if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("HTTP server error: %v", err)
+	}
+}
 
-		c.conn = conn
-		log.Println("Connected to NapCat")
-
-		go c.messageHandler()
+// 处理 NapCat 推送的事件
+func (c *Client) handleHTTPEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-}
 
-func (c *Client) messageHandler() {
-	defer func() {
-		if c.conn != nil {
-			c.conn.Close()
-		}
-	}()
-
-	for {
-		// Receive message
-		_, msg, err := c.conn.ReadMessage()
-		if err != nil {
-			log.Printf("read error: %v", err)
-			c.reconnect()
-			return
-		}
-
-		// Unmarshal to map
-		jsonMap := make(map[string]any)
-		if err := json.Unmarshal(msg, &jsonMap); err != nil {
-			log.Printf("parse message error: %v", err)
-			continue
-		}
-
-		if jsonMap["echo"] != nil {
-			// Response to sent message
-			var resp cqResponse
-			if err := json.Unmarshal(msg, &resp); err == nil {
-				c.mutex.Lock()
-				if val, ok := c.pendingEcho.Load(resp.Echo); ok {
-					pr := val.(*pendingResponse)
-					pr.timer.Stop()
-					pr.ch <- &resp
-					c.pendingEcho.Delete(resp.Echo)
-				}
-				c.mutex.Unlock()
-			}
-		} else if postType, exists := jsonMap["post_type"]; exists {
-			// Server-initiated push
-			if str, ok := postType.(string); ok && str != "" {
-				go c.handleEvents(&str, &msg, &jsonMap)
-			}
-		}
-	}
-}
-
-func (c *Client) reconnect() {
-	if c.stopChan != nil {
-		close(c.stopChan)
-	}
-	c.stopChan = make(chan bool)
-	c.connect()
-}
-
-func (c *Client) sendJson(req *cqRequest) error {
-	jsonBytes, err := json.Marshal(req)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return err
+		log.Printf("读取请求体失败: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
-	if c.conn == nil {
-		return fmt.Errorf("connection not ready")
+	defer r.Body.Close()
+
+	// 解析 JSON
+	jsonMap := make(map[string]any)
+	if err := json.Unmarshal(body, &jsonMap); err != nil {
+		log.Printf("解析 JSON 失败: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
-	if err := c.conn.WriteMessage(websocket.TextMessage, jsonBytes); err != nil {
-		return err
+
+	// 处理事件
+	if postType, exists := jsonMap["post_type"]; exists {
+		if str, ok := postType.(string); ok && str != "" {
+			go c.handleEvents(&str, &body, &jsonMap)
+		}
 	}
-	return nil
+
+	// 返回成功响应
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
 }
 
-func (c *Client) sendJsonWithEcho(req *cqRequest) (*cqResponse, error) {
-	// Generate echo key
-	echo := uuid.New().String()
-	req.Echo = echo
-
-	respCh := make(chan *cqResponse, 1)
-	timeout := time.NewTimer(5 * time.Second)
-	defer timeout.Stop()
-
-	// Save the key to pendingEcho
-	c.mutex.Lock()
-	c.pendingEcho.Store(echo, &pendingResponse{
-		ch:    respCh,
-		timer: timeout,
-	})
-	c.mutex.Unlock()
-
-	// Send request
-	if err := c.sendJson(req); err != nil {
+// 发送 API 请求到 NapCat（正向 HTTP）
+// 统一的 HTTP 请求方法
+func (c *Client) sendRequest(req *cqRequest) (*http.Response, error) {
+	jsonBytes, err := json.Marshal(req.Params)
+	if err != nil {
 		return nil, err
 	}
 
-	// Wait for response
-	select {
-	case resp := <-respCh:
-		if resp == nil {
-			return nil, fmt.Errorf("response channel closed")
-		} else {
-			log.Printf("Sent message: %v", req.Params)
-		}
-		return resp, nil
-	case <-timeout.C:
-		c.mutex.Lock()
-		c.pendingEcho.Delete(echo)
-		c.mutex.Unlock()
-		return nil, fmt.Errorf("wait response timeout")
+	httpReq, err := http.NewRequest(http.MethodPost, config.Cfg.NapcatHttpServer+"/"+req.Action, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, err
 	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if config.Cfg.ApiKeys.Longport.AccessToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+config.Cfg.ApiKeys.Longport.AccessToken)
+	}
+
+	return c.httpClient.Do(httpReq)
+}
+
+func (c *Client) sendJson(req *cqRequest) error {
+	resp, err := c.sendRequest(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) sendWithResponse(req *cqRequest) (*cqResponse, error) {
+	resp, err := c.sendRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var cqResp cqResponse
+	if err := json.Unmarshal(body, &cqResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	return &cqResp, nil
+}
+
+// 发送请求并返回 JSON 字符串（用于测试 API）
+func (c *Client) sendWithJSONResponse(req *cqRequest) (string, error) {
+	resp, err := c.sendRequest(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("API 响应: %s", string(body))
+	return string(body), nil
 }

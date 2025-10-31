@@ -2,26 +2,12 @@ package qbot
 
 import (
 	"encoding/json"
-	"sync"
-	"time"
-
-	"github.com/gorilla/websocket"
+	"net/http"
 )
 
-type Config struct {
-	Address      string        `json:"address"`
-	Reconnect    time.Duration `json:"reconnect"`
-	ReadTimeout  time.Duration `json:"read_timeout"`
-	WriteTimeout time.Duration `json:"write_timeout"`
-}
-
 type Client struct {
-	config        *Config
-	conn          *websocket.Conn
-	retryCount    int
-	stopChan      chan bool
-	pendingEcho   sync.Map
-	mutex         sync.Mutex
+	httpClient    *http.Client
+	server        *http.Server
 	eventHandlers struct {
 		onMessage func(c *Client, msg *Message)
 	}
@@ -78,15 +64,11 @@ type messageJson struct {
 	} `json:"message"`
 }
 
-type pendingResponse struct {
-	ch    chan *cqResponse
-	timer *time.Timer
-}
+// 移除 pendingResponse，HTTP 模式不需要等待响应
 
 type cqRequest struct {
 	Action string         `json:"action"`
 	Params map[string]any `json:"params"`
-	Echo   string         `json:"echo,omitempty"`
 }
 
 type GroupMemberInfo struct {
@@ -113,9 +95,9 @@ type cqResponse struct {
 	Retcode int    `json:"retcode"`
 	Data    struct {
 		MessageId uint64 `json:"message_id"`
+		Url       string `json:"url"`
 		GroupMemberInfo
-	}
+	} `json:"data"`
 	Message string `json:"message"`
 	Wording string `json:"wording"`
-	Echo    string `json:"echo"`
 }

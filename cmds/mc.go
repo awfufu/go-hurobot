@@ -12,15 +12,35 @@ import (
 	"gorm.io/gorm"
 )
 
-func cmd_mc(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
-	if args.Size < 2 {
-		c.SendMsg(raw, "Usage: mc <command>")
-		return
-	}
+const mcHelpMsg string = `Execute Minecraft RCON commands.
+Usage: /mc <command>
+Example: /mc list`
 
+type McCommand struct {
+	cmdBase
+}
+
+func NewMcCommand() *McCommand {
+	return &McCommand{
+		cmdBase: cmdBase{
+			Name:        "mc",
+			HelpMsg:     mcHelpMsg,
+			Permission:  getCmdPermLevel("mc"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+			MinArgs:     2,
+		},
+	}
+}
+
+func (cmd *McCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *McCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
 	// Get RCON configuration for this group
 	var rconConfig qbot.GroupRconConfigs
-	result := qbot.PsqlDB.Where("group_id = ?", raw.GroupID).First(&rconConfig)
+	result := qbot.PsqlDB.Where("group_id = ?", src.GroupID).First(&rconConfig)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -32,36 +52,36 @@ func cmd_mc(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
 	}
 
 	if !rconConfig.Enabled {
-		c.SendMsg(raw, "RCON is disabled for this group")
+		c.SendMsg(src.GroupID, src.UserID, "RCON is disabled for this group")
 		return
 	}
 
 	// Join all arguments after 'mc' as the command
-	command := strings.Join(args.Contents[1:], " ")
+	command := strings.Join(args[1:], " ")
 
 	// Check permissions for non-master users
-	if raw.UserID != config.MasterID && !isAllowedCommand(command) {
-		c.SendMsg(raw, "Permission denied. You can only use query commands.")
+	if src.UserID != config.Cfg.Permissions.MasterID && !isAllowedCommand(command) {
+		c.SendMsg(src.GroupID, src.UserID, "Permission denied. You can only use query commands.")
 		return
 	}
 
 	// Execute RCON command
 	response, err := executeRconCommand(rconConfig.Address, rconConfig.Password, command)
 	if err != nil {
-		c.SendMsg(raw, fmt.Sprintf("RCON error: %s", err.Error()))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("RCON error: %s", err.Error()))
 		return
 	}
 
 	// Send response back (limit to avoid spam)
-	if len(response) > 1000 {
-		response = response[:1000] + "... (truncated)"
+	if len(response) > 2048 {
+		response = response[:2048] + "... (truncated)"
 	}
 
 	if response == "" {
 		response = "No output"
 	}
 
-	c.SendMsg(raw, qbot.CQReply(raw.UserID)+response)
+	c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+response)
 }
 
 func executeRconCommand(address, password, command string) (string, error) {

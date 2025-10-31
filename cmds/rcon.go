@@ -5,52 +5,64 @@ import (
 	"strconv"
 	"strings"
 
-	"go-hurobot/config"
 	"go-hurobot/qbot"
 )
 
-func cmd_rcon(c *qbot.Client, raw *qbot.Message, args *ArgsList) {
-	if raw.UserID != config.MasterID {
-		return
-	}
-
-	const help = `Usage: rcon [status | set <address> <password> | enable | disable]
-
+const rconHelpMsg string = `Manage RCON configuration.
+Usage: /rcon [status | set <address> <password> | enable | disable]
 Examples:
-  rcon status
-  rcon set '127.0.0.1:25575' 'password'
-  rcon enable
-  rcon disable`
+  /rcon status
+  /rcon set 127.0.0.1:25575 password
+  /rcon enable
+  /rcon disable`
 
-	if args.Size == 1 {
-		c.SendMsg(raw, help)
-		return
-	}
+type RconCommand struct {
+	cmdBase
+}
 
-	switch args.Contents[1] {
-	case "status":
-		showRconStatus(c, raw)
-	case "set":
-		if args.Size != 4 {
-			c.SendMsg(raw, "Usage: rcon set <address> <password>")
-			return
-		}
-		setRconConfig(c, raw, args.Contents[2], args.Contents[3])
-	case "enable":
-		toggleRcon(c, raw, true)
-	case "disable":
-		toggleRcon(c, raw, false)
-	default:
-		c.SendMsg(raw, help)
+func NewRconCommand() *RconCommand {
+	return &RconCommand{
+		cmdBase: cmdBase{
+			Name:        "rcon",
+			HelpMsg:     rconHelpMsg,
+			Permission:  getCmdPermLevel("rcon"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+			MaxArgs:     4,
+			MinArgs:     2,
+		},
 	}
 }
 
-func showRconStatus(c *qbot.Client, msg *qbot.Message) {
+func (cmd *RconCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *RconCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+	switch args[1] {
+	case "status":
+		showRconStatus(c, src)
+	case "set":
+		if len(args) != 4 {
+			c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
+			return
+		}
+		setRconConfig(c, src, args[2], args[3])
+	case "enable":
+		toggleRcon(c, src, true)
+	case "disable":
+		toggleRcon(c, src, false)
+	default:
+		c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
+	}
+}
+
+func showRconStatus(c *qbot.Client, src *srcMsg) {
 	var config qbot.GroupRconConfigs
-	result := qbot.PsqlDB.Where("group_id = ?", msg.GroupID).First(&config)
+	result := qbot.PsqlDB.Where("group_id = ?", src.GroupID).First(&config)
 
 	if result.Error != nil {
-		c.SendMsg(msg, "RCON not configured for this group")
+		c.SendMsg(src.GroupID, src.UserID, "RCON not configured for this group")
 		return
 	}
 
@@ -64,37 +76,37 @@ func showRconStatus(c *qbot.Client, msg *qbot.Message) {
 	response := fmt.Sprintf("RCON Status: %s\nAddress: %s\nPassword: %s",
 		status, config.Address, maskedPassword)
 
-	c.SendMsg(msg, response)
+	c.SendMsg(src.GroupID, src.UserID, response)
 }
 
-func setRconConfig(c *qbot.Client, msg *qbot.Message, address, password string) {
+func setRconConfig(c *qbot.Client, src *srcMsg, address, password string) {
 	// Validate address format (should contain port)
 	if !strings.Contains(address, ":") {
-		c.SendMsg(msg, "Invalid address format. Use host:port (e.g., 127.0.0.1:25575)")
+		c.SendMsg(src.GroupID, src.UserID, "Invalid address format. Use host:port (e.g., 127.0.0.1:25575)")
 		return
 	}
 
 	// Validate port
 	parts := strings.Split(address, ":")
 	if len(parts) != 2 {
-		c.SendMsg(msg, "Invalid address format. Use host:port")
+		c.SendMsg(src.GroupID, src.UserID, "Invalid address format. Use host:port")
 		return
 	}
 
 	if port, err := strconv.Atoi(parts[1]); err != nil || port < 1 || port > 65535 {
-		c.SendMsg(msg, "Invalid port number")
+		c.SendMsg(src.GroupID, src.UserID, "Invalid port number")
 		return
 	}
 
 	config := qbot.GroupRconConfigs{
-		GroupID:  msg.GroupID,
+		GroupID:  src.GroupID,
 		Address:  address,
 		Password: password,
-		Enabled:  false, // Default to disabled for security
+		Enabled:  true, // Default to disabled for security
 	}
 
 	// Use Upsert to create or update
-	result := qbot.PsqlDB.Where("group_id = ?", msg.GroupID).Assign(
+	result := qbot.PsqlDB.Where("group_id = ?", src.GroupID).Assign(
 		qbot.GroupRconConfigs{
 			Address:  address,
 			Password: password,
@@ -102,28 +114,28 @@ func setRconConfig(c *qbot.Client, msg *qbot.Message, address, password string) 
 	).FirstOrCreate(&config)
 
 	if result.Error != nil {
-		c.SendMsg(msg, "Database error: "+result.Error.Error())
+		c.SendMsg(src.GroupID, src.UserID, "Database error: "+result.Error.Error())
 		return
 	}
 
-	c.SendMsg(msg, fmt.Sprintf("RCON configuration updated:\nAddress: %s\nStatus: disabled (use 'rcon enable' to enable)", address))
+	c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("RCON configuration updated: %s:%s", address, password))
 }
 
-func toggleRcon(c *qbot.Client, msg *qbot.Message, enabled bool) {
+func toggleRcon(c *qbot.Client, src *srcMsg, enabled bool) {
 	// Check if configuration exists
 	var config qbot.GroupRconConfigs
-	result := qbot.PsqlDB.Where("group_id = ?", msg.GroupID).First(&config)
+	result := qbot.PsqlDB.Where("group_id = ?", src.GroupID).First(&config)
 
 	if result.Error != nil {
-		c.SendMsg(msg, "RCON not configured for this group. Use 'rcon set' first.")
+		c.SendMsg(src.GroupID, src.UserID, "RCON not configured for this group. Use 'rcon set' first.")
 		return
 	}
 
 	// Update enabled status
-	result = qbot.PsqlDB.Model(&config).Where("group_id = ?", msg.GroupID).Update("enabled", enabled)
+	result = qbot.PsqlDB.Model(&config).Where("group_id = ?", src.GroupID).Update("enabled", enabled)
 
 	if result.Error != nil {
-		c.SendMsg(msg, "Database error: "+result.Error.Error())
+		c.SendMsg(src.GroupID, src.UserID, "Database error: "+result.Error.Error())
 		return
 	}
 
@@ -131,5 +143,5 @@ func toggleRcon(c *qbot.Client, msg *qbot.Message, enabled bool) {
 	if enabled {
 		status = "enabled"
 	}
-	c.SendMsg(msg, fmt.Sprintf("RCON %s for this group", status))
+	c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("RCON %s for this group", status))
 }

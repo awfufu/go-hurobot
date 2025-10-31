@@ -13,6 +13,11 @@ import (
 	"go-hurobot/qbot"
 )
 
+const drawHelpMsg string = `Generate images from text prompts.
+Usage: /draw <prompt> [--size <size>]
+Supported sizes: 1328x1328, 1584x1056, 1140x1472, 1664x928, 928x1664
+Example: /draw a cat --size 1328x1328`
+
 type ImageGenerationRequest struct {
 	Model         string  `json:"model"`
 	Prompt        string  `json:"prompt"`
@@ -31,30 +36,45 @@ type ImageGenerationResponse struct {
 	Seed int64 `json:"seed"`
 }
 
-func cmd_draw(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
-	if args.Size < 2 {
-		helpMsg := `Usage: draw <prompt> [--size <1328x1328|1584x1056|1140x1472|1664x928|928x1664>]`
-		c.SendMsg(msg, helpMsg)
+type DrawCommand struct {
+	cmdBase
+}
+
+func NewDrawCommand() *DrawCommand {
+	return &DrawCommand{
+		cmdBase: cmdBase{
+			Name:        "draw",
+			HelpMsg:     drawHelpMsg,
+			Permission:  getCmdPermLevel("draw"),
+			AllowPrefix: false,
+			NeedRawMsg:  false,
+			MinArgs:     2,
+		},
+	}
+}
+
+func (cmd *DrawCommand) Self() *cmdBase {
+	return &cmd.cmdBase
+}
+
+func (cmd *DrawCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+	if config.Cfg.ApiKeys.DrawApiKey == "" {
+		c.SendMsg(src.GroupID, src.UserID, "No API key")
 		return
 	}
 
-	if config.ApiKey == "" {
-		c.SendMsg(msg, "No API key")
-		return
-	}
-
-	prompt, imageSize, err := parseDrawArgs(args.Contents[1:])
+	prompt, imageSize, err := parseDrawArgs(args[1:])
 	if err != nil {
-		c.SendMsg(msg, err.Error())
+		c.SendMsg(src.GroupID, src.UserID, err.Error())
 		return
 	}
 
 	if prompt == "" {
-		c.SendMsg(msg, "Please provide a prompt")
+		c.SendMsg(src.GroupID, src.UserID, "Please provide a prompt")
 		return
 	}
 
-	c.SendMsg(msg, "Image generating...")
+	c.SendMsg(src.GroupID, src.UserID, "Image generating...")
 
 	reqData := ImageGenerationRequest{
 		Model:         "Qwen/Qwen-Image",
@@ -66,17 +86,17 @@ func cmd_draw(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
-		c.SendMsg(msg, fmt.Sprintf("%v", err))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
 		return
 	}
 
-	req, err := http.NewRequest("POST", "https://api.siliconflow.cn/v1/images/generations", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", config.Cfg.ApiKeys.DrawUrlBase, bytes.NewBuffer(jsonData))
 	if err != nil {
-		c.SendMsg(msg, fmt.Sprintf("%v", err))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
 		return
 	}
 
-	req.Header.Set("Authorization", "Bearer "+config.ApiKey)
+	req.Header.Set("Authorization", "Bearer "+config.Cfg.ApiKeys.DrawApiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{
@@ -85,35 +105,35 @@ func cmd_draw(c *qbot.Client, msg *qbot.Message, args *ArgsList) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		c.SendMsg(msg, fmt.Sprintf("%v", err))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.SendMsg(msg, fmt.Sprintf("%v", err))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
 		return
 	}
 
 	if resp.StatusCode != 200 {
-		c.SendMsg(msg, fmt.Sprintf("%d\n%s", resp.StatusCode, string(body)))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%d\n%s", resp.StatusCode, string(body)))
 		return
 	}
 
 	var imgResp ImageGenerationResponse
 	if err := json.Unmarshal(body, &imgResp); err != nil {
-		c.SendMsg(msg, fmt.Sprintf("%v", err))
+		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
 		return
 	}
 
 	if len(imgResp.Images) == 0 {
-		c.SendMsg(msg, "error: 未生成任何图片")
+		c.SendMsg(src.GroupID, src.UserID, "error: no images generated")
 		return
 	}
 
 	imageURL := imgResp.Images[0].URL
-	c.SendMsg(msg, qbot.CQReply(msg.MsgID)+qbot.CQImage(imageURL))
+	c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+qbot.CQImage(imageURL))
 }
 
 func parseDrawArgs(args []string) (prompt, imageSize string, err error) {
@@ -130,12 +150,12 @@ func parseDrawArgs(args []string) (prompt, imageSize string, err error) {
 			if i+1 < len(args) {
 				size := args[i+1]
 				if !isValidSize(size) {
-					return "", "", fmt.Errorf("不支持的图片尺寸: %s\n支持的尺寸: 1328x1328, 1584x1056, 1140x1472, 1664x928, 928x1664", size)
+					return "", "", fmt.Errorf("unsupported image size: %s\nSupported sizes: 1328x1328, 1584x1056, 1140x1472, 1664x928, 928x1664", size)
 				}
 				imageSize = size
 				i += 2
 			} else {
-				return "", "", fmt.Errorf("--size: 需要指定尺寸值")
+				return "", "", fmt.Errorf("--size: size value required")
 			}
 		default:
 			promptParts = append(promptParts, arg)

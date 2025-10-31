@@ -1,5 +1,7 @@
 package qbot
 
+import "log"
+
 func (c *Client) SendPrivateMsg(userID uint64, message string, autoEscape bool) (uint64, error) {
 	if message == "" {
 		message = " "
@@ -12,10 +14,11 @@ func (c *Client) SendPrivateMsg(userID uint64, message string, autoEscape bool) 
 			"auto_escape": autoEscape,
 		},
 	}
-	resp, err := c.sendJsonWithEcho(&req)
+	resp, err := c.sendWithResponse(&req)
 	if err != nil {
 		return 0, err
 	}
+	log.Println("send-private: ", message)
 	return resp.Data.MessageId, nil
 }
 
@@ -32,10 +35,11 @@ func (c *Client) SendGroupMsg(groupID uint64, message string, autoEscape bool) (
 		},
 	}
 
-	resp, err := c.sendJsonWithEcho(&req)
+	resp, err := c.sendWithResponse(&req)
 	if err != nil {
 		return 0, err
 	}
+	log.Println("send-group: ", message)
 	return resp.Data.MessageId, nil
 }
 
@@ -123,24 +127,12 @@ func (c *Client) DeleteMsg(msgID uint64) error {
 	return err
 }
 
-func (c *Client) SendRecord(msg *Message, file string) {
-	c.SendMsg(msg, CQRecord(file))
-}
-
-func (c *Client) SendReplyMsg(msg *Message, message string) {
-	c.SendMsg(msg, CQReply(msg.MsgID)+message)
-}
-
-func (c *Client) SendMsg(msg *Message, message string) {
-	if msg.GroupID == 0 {
-		c.SendPrivateMsg(msg.UserID, message, false)
+func (c *Client) SendMsg(groupID uint64, userID uint64, message string) {
+	if groupID == 0 {
+		c.SendPrivateMsg(userID, message, false)
 	} else {
-		c.SendGroupMsg(msg.GroupID, message, false)
+		c.SendGroupMsg(groupID, message, false)
 	}
-}
-
-func (c *Client) SendImage(msg *Message, url string) {
-	c.SendMsg(msg, CQImage(url))
 }
 
 func (c *Client) GetGroupMemberInfo(groupID uint64, userID uint64, noCache bool) (*GroupMemberInfo, error) {
@@ -152,9 +144,39 @@ func (c *Client) GetGroupMemberInfo(groupID uint64, userID uint64, noCache bool)
 			"no_cache": noCache,
 		},
 	}
-	resp, err := c.sendJsonWithEcho(&req)
+	resp, err := c.sendWithResponse(&req)
 	if err != nil {
 		return nil, err
 	}
 	return &resp.Data.GroupMemberInfo, nil
+}
+
+func (c *Client) GetGroupFileUrl(groupID uint64, fileID string, busid int32) (string, error) {
+	req := cqRequest{
+		Action: "get_group_file_url",
+		Params: map[string]any{
+			"group_id": groupID,
+			"file_id":  fileID,
+			"busid":    busid,
+		},
+	}
+	resp, err := c.sendWithResponse(&req)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.Url, nil
+}
+
+func (c *Client) SendTestAPIRequest(action string, params map[string]interface{}) (string, error) {
+	req := cqRequest{
+		Action: action,
+		Params: params,
+	}
+
+	resp, err := c.sendWithJSONResponse(&req)
+	if err != nil {
+		return "", err
+	}
+
+	return resp, nil
 }

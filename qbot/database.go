@@ -1,6 +1,10 @@
 package qbot
 
 import (
+	"fmt"
+	"go-hurobot/config"
+	"log"
+	"strconv"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -52,13 +56,20 @@ type LegacyGame struct {
 	Balance int    `gorm:"not null;column:balance;default:0"`
 }
 
-func initPsqlDB(dsn string) error {
+func InitDB() {
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		config.Cfg.PostgreSQL.Host,
+		strconv.Itoa(int(config.Cfg.PostgreSQL.Port)),
+		config.Cfg.PostgreSQL.User,
+		config.Cfg.PostgreSQL.Password,
+		config.Cfg.PostgreSQL.DbName,
+	)
 	var err error
 	if PsqlDB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{}); err != nil {
-		return err
+		log.Fatalln(err)
 	}
 	PsqlConnected = true
-	return PsqlDB.AutoMigrate(&Users{}, &Messages{}, &UserEvents{}, &GroupRconConfigs{}, &LegacyGame{})
+	PsqlDB.AutoMigrate(&Users{}, &Messages{}, &UserEvents{}, &GroupRconConfigs{}, &LegacyGame{})
 }
 
 func SaveDatabase(msg *Message, isCmd bool) error {

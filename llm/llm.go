@@ -19,7 +19,7 @@ func NeedLLMResponse(msg *qbot.Message) bool {
 		return true
 	} else {
 		for _, item := range msg.Array {
-			if item.Type == qbot.At && item.Content == strconv.FormatUint(config.BotID, 10) {
+			if item.Type == qbot.At && item.Content == strconv.FormatUint(config.Cfg.Permissions.BotID, 10) {
 				return true
 			}
 		}
@@ -45,7 +45,7 @@ func SendLLMRequest(supplier string, messages []openai.ChatCompletionMessagePara
 
 	apiKey := supplierConf.APIKey
 	if apiKey == "" {
-		apiKey = config.ApiKey
+		return nil, fmt.Errorf("supplier %s api_key is empty", supplier)
 	}
 	if supplierConf.BaseURL == "" {
 		return nil, fmt.Errorf("supplier %s base_url is empty", supplier)
@@ -115,7 +115,7 @@ userinfo 1006554341 add 喜欢编程
 		First(&llmCustomConfig).Error
 
 	if err != nil || !llmCustomConfig.Enabled {
-		c.SendMsg(msg, err.Error())
+		c.SendMsg(msg.GroupID, msg.UserID, err.Error())
 		return
 	}
 
@@ -229,7 +229,7 @@ userinfo 1006554341 add 喜欢编程
 	chatHistory += currentMsgFormatted
 
 	messages = append(messages, openai.UserMessage("以下是最近的聊天记录，请你根据最新的消息生成回复，之前的消息可作为参考。你的id是"+
-		strconv.FormatUint(config.BotID, 10)+"\n"+chatHistory))
+		strconv.FormatUint(config.Cfg.Permissions.BotID, 10)+"\n"+chatHistory))
 
 	resp, err := SendLLMRequest(llmCustomConfig.Supplier, messages, llmCustomConfig.Model, 0.6)
 	if err != nil {
@@ -237,21 +237,27 @@ userinfo 1006554341 add 喜欢编程
 		return
 	}
 
+	// 检查响应是否有效
+	if resp == nil || len(resp.Choices) == 0 {
+		c.SendGroupMsg(msg.GroupID, "LLM 返回了空响应", false)
+		return
+	}
+
 	responseContent := resp.Choices[0].Message.Content
 
 	if llmCustomConfig.Debug {
-		c.SendReplyMsg(msg, responseContent)
+		c.SendMsg(msg.GroupID, msg.UserID, responseContent)
 	}
 
 	err = parseAndExecuteCommands(c, msg, responseContent)
 	if err != nil {
-		c.SendPrivateMsg(config.MasterID, "命令解析错误：\n"+err.Error(), false)
-		c.SendPrivateMsg(config.MasterID, responseContent, false)
-		c.SendPrivateMsg(config.MasterID, "消息来源：\ngroup_id="+strconv.FormatUint(msg.GroupID, 10)+"\nuser_id="+strconv.FormatUint(msg.UserID, 10)+"\nmsg="+msg.Content, false)
+		c.SendPrivateMsg(config.Cfg.Permissions.MasterID, "命令解析错误：\n"+err.Error(), false)
+		c.SendPrivateMsg(config.Cfg.Permissions.MasterID, responseContent, false)
+		c.SendPrivateMsg(config.Cfg.Permissions.MasterID, "消息来源：\ngroup_id="+strconv.FormatUint(msg.GroupID, 10)+"\nuser_id="+strconv.FormatUint(msg.UserID, 10)+"\nmsg="+msg.Content, false)
 		return
 	}
 
-	if resp != nil && resp.Usage.TotalTokens > 0 {
+	if resp.Usage.TotalTokens > 0 {
 		go qbot.PsqlDB.Table("users").
 			Where("user_id = ?", msg.UserID).
 			Update("token_usage", gorm.Expr("token_usage + ?", resp.Usage.TotalTokens))
@@ -544,7 +550,7 @@ func parseAndExecuteCommands(c *qbot.Client, msg *qbot.Message, content string) 
 		if err == nil {
 			saveMsg := &qbot.Message{
 				GroupID:  msg.GroupID,
-				UserID:   config.BotID,
+				UserID:   config.Cfg.Permissions.BotID,
 				Nickname: "狐萝bot",
 				Card:     "狐萝bot",
 				Time:     uint64(time.Now().Unix()),
