@@ -6,24 +6,22 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/awfufu/go-hurobot/config"
-	"github.com/awfufu/go-hurobot/db"
+	"github.com/awfufu/go-hurobot/internal/config"
+	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 
 const permHelpMsg string = `Manage command permissions.
 Usage: perm <subcommand> [args...]
 Subcommands:
-  set <cmd> user_default <guest|admin|master>
-  set <cmd> group_default <enable|disable>
-  allow <cmd> user <add|rm|list> [targets...]
-  allow <cmd> group <add|rm|list> [targets...]
-  reject <cmd> user <add|rm|list> [targets...]
-  reject <cmd> group <add|rm|list> [targets...]
+  set <cmd> <key> <value>
+    Keys: user_allow (0-2/guest/admin/master), group_enable (0-1), whitelist_user (0-1), whitelist_group (0-1)
+  special <cmd> <user|group> <add|rm|list> [targets...]
 Examples:
-  /perm set draw user_default guest
-  /perm allow sh user add @user
-  /perm reject llm group add 12345`
+  /perm set draw user_allow 0
+  /perm set draw group_enable 1
+  /perm special draw user add @user
+  /perm special draw group list`
 
 type PermCommand struct {
 	cmdBase
@@ -64,10 +62,8 @@ func (cmd *PermCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	switch subCmd {
 	case "set":
 		cmd.handleSet(b, msg)
-	case "allow":
-		cmd.handleListModify(b, msg, true)
-	case "reject":
-		cmd.handleListModify(b, msg, false)
+	case "special":
+		cmd.handleSpecial(b, msg)
 	default:
 		b.SendGroupMsg(msg.GroupID, "Unknown subcommand: "+subCmd)
 	}
@@ -84,54 +80,74 @@ func (cmd *PermCommand) handleSet(b *qbot.Bot, msg *qbot.Message) {
 	}
 
 	if len(msg.Array) < 5 {
-		b.SendGroupMsg(msg.GroupID, "Usage: perm set <cmd> <user_default|group_default> <value>")
+		b.SendGroupMsg(msg.GroupID, "Usage: perm set <cmd> <key> <value>")
 		return
 	}
 
 	cmdName := getText(2)
-	settingType := getText(3)
+	key := getText(3)
 	value := getText(4)
 
 	perm := db.GetCommandPermission(cmdName)
 	if perm == nil {
-		// Initialize if not exists
+		// Initialize if not exists (should theoretically exist from startup, but safe fallback)
 		perm = &db.DbPermissions{
-			Command:      cmdName,
-			UserDefault:  "master",
-			GroupDefault: "disable",
-			AllowUsers:   "[]",
-			RejectUsers:  "[]",
-			AllowGroups:  "[]",
-			RejectGroups: "[]",
+			Command:           cmdName,
+			UserAllow:         2,
+			GroupEnable:       0,
+			SpecialUsers:      "",
+			IsWhitelistUsers:  0,
+			SpecialGroups:     "",
+			IsWhitelistGroups: 0,
 		}
 	}
 
-	switch settingType {
-	case "user_default":
-		if value != "guest" && value != "admin" && value != "master" {
-			b.SendGroupMsg(msg.GroupID, "Invalid value for user_default. Must be guest, admin, or master.")
+	switch key {
+	case "user_allow":
+		valInt := 2
+		switch value {
+		case "0", "guest":
+			valInt = 0
+		case "1", "admin":
+			valInt = 1
+		case "2", "master":
+			valInt = 2
+		default:
+			b.SendGroupMsg(msg.GroupID, "Invalid user_allow. Use 0/guest, 1/admin, 2/master")
 			return
 		}
-		perm.UserDefault = value
-	case "group_default":
-		if value != "enable" && value != "disable" {
-			b.SendGroupMsg(msg.GroupID, "Invalid value for group_default. Must be enable or disable.")
-			return
+		perm.UserAllow = valInt
+	case "group_enable":
+		if value == "1" || value == "enable" || value == "true" {
+			perm.GroupEnable = 1
+		} else {
+			perm.GroupEnable = 0
 		}
-		perm.GroupDefault = value
+	case "whitelist_user":
+		if value == "1" || value == "enable" || value == "true" {
+			perm.IsWhitelistUsers = 1
+		} else {
+			perm.IsWhitelistUsers = 0
+		}
+	case "whitelist_group":
+		if value == "1" || value == "enable" || value == "true" {
+			perm.IsWhitelistGroups = 1
+		} else {
+			perm.IsWhitelistGroups = 0
+		}
 	default:
-		b.SendGroupMsg(msg.GroupID, "Unknown setting type: "+settingType)
+		b.SendGroupMsg(msg.GroupID, "Unknown key: "+key)
 		return
 	}
 
 	if err := db.SaveCommandPermission(perm); err != nil {
 		b.SendGroupMsg(msg.GroupID, "Failed to save permission: "+err.Error())
 	} else {
-		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Updated %s %s to %s", cmdName, settingType, value))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Updated %s %s to %s", cmdName, key, value))
 	}
 }
 
-func (cmd *PermCommand) handleListModify(b *qbot.Bot, msg *qbot.Message, isAllow bool) {
+func (cmd *PermCommand) handleSpecial(b *qbot.Bot, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
 			if txt := msg.Array[i].GetTextItem(); txt != nil {
@@ -141,14 +157,10 @@ func (cmd *PermCommand) handleListModify(b *qbot.Bot, msg *qbot.Message, isAllow
 		return ""
 	}
 
-	// allow <cmd> <user|group> <add|rm|list> [targets...]
-	// 0     1     2            3             4
+	// special <cmd> <user|group> <add|rm|list> [targets...]
+	// 0       1     2            3             4
 	if len(msg.Array) < 4 {
-		actionType := "allow"
-		if !isAllow {
-			actionType = "reject"
-		}
-		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Usage: perm %s <cmd> <user|group> <add|rm|list> [targets...]", actionType))
+		b.SendGroupMsg(msg.GroupID, "Usage: perm special <cmd> <user|group> <add|rm|list> [targets...]")
 		return
 	}
 
@@ -166,30 +178,20 @@ func (cmd *PermCommand) handleListModify(b *qbot.Bot, msg *qbot.Message, isAllow
 
 	perm := db.GetCommandPermission(cmdName)
 	if perm == nil {
-		// Initialize
 		perm = &db.DbPermissions{
-			Command:      cmdName,
-			UserDefault:  "master",
-			GroupDefault: "disable",
-			AllowUsers:   "",
-			RejectUsers:  "",
-			AllowGroups:  "",
-			RejectGroups: "",
+			Command:           cmdName,
+			UserAllow:         2,
+			GroupEnable:       0,
+			SpecialUsers:      "",
+			IsWhitelistUsers:  0,
+			SpecialGroups:     "",
+			IsWhitelistGroups: 0,
 		}
 	} else {
-		// Ensure we are working with correct struct fields
-		if isAllow {
-			if targetType == "user" {
-				rawStr = perm.AllowUsers
-			} else {
-				rawStr = perm.AllowGroups
-			}
+		if targetType == "user" {
+			rawStr = perm.SpecialUsers
 		} else {
-			if targetType == "user" {
-				rawStr = perm.RejectUsers
-			} else {
-				rawStr = perm.RejectGroups
-			}
+			rawStr = perm.SpecialGroups
 		}
 	}
 
@@ -247,18 +249,10 @@ func (cmd *PermCommand) handleListModify(b *qbot.Bot, msg *qbot.Message, isAllow
 	// Update struct
 	newStr := db.JoinIDList(currentList)
 
-	if isAllow {
-		if targetType == "user" {
-			perm.AllowUsers = newStr
-		} else {
-			perm.AllowGroups = newStr
-		}
+	if targetType == "user" {
+		perm.SpecialUsers = newStr
 	} else {
-		if targetType == "user" {
-			perm.RejectUsers = newStr
-		} else {
-			perm.RejectGroups = newStr
-		}
+		perm.SpecialGroups = newStr
 	}
 
 	if err := db.SaveCommandPermission(perm); err != nil {

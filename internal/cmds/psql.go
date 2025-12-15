@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/awfufu/go-hurobot/db"
+	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 

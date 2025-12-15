@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/go-hurobot/internal/config"
 	"github.com/awfufu/qbot"
 
 	"gorm.io/driver/sqlite"
@@ -41,33 +41,25 @@ func (dbMessages) TableName() string {
 }
 
 type DbPermissions struct {
-	Command      string `gorm:"primaryKey;column:command"`
-	UserDefault  string `gorm:"not null;column:user_default;default:master"`   // guest, admin, master
-	GroupDefault string `gorm:"not null;column:group_default;default:disable"` // enable, disable
-	AllowUsers   string `gorm:"column:allow_users"`                            // CSV string: "123,456"
-	RejectUsers  string `gorm:"column:reject_users"`                           // CSV string: "123,456"
-	AllowGroups  string `gorm:"column:allow_groups"`                           // CSV string: "123,456"
-	RejectGroups string `gorm:"column:reject_groups"`                          // CSV string: "123,456"
+	Command           string `gorm:"primaryKey;column:command"`
+	UserAllow         int    `gorm:"not null;column:user_allow;default:2"`   // 0:guest, 1:admin, 2:master
+	GroupEnable       int    `gorm:"not null;column:group_enable;default:0"` // 0:disable, 1:enable
+	SpecialUsers      string `gorm:"column:special_users"`                   // CSV string
+	IsWhitelistUsers  int    `gorm:"column:is_users_whitelist;default:0"`    // 0:blacklist, 1:whitelist
+	SpecialGroups     string `gorm:"column:special_groups"`                  // CSV string. Note: db col "special_group"
+	IsWhitelistGroups int    `gorm:"column:is_groups_whitelist;default:0"`   // 0:blacklist, 1:whitelist
 }
 
 func (DbPermissions) TableName() string {
 	return "permissions"
 }
 
-func (p *DbPermissions) ParseAllowUsers() []uint64 {
-	return ParseIDList(p.AllowUsers)
+func (p *DbPermissions) ParseSpecialUsers() []uint64 {
+	return ParseIDList(p.SpecialUsers)
 }
 
-func (p *DbPermissions) ParseRejectUsers() []uint64 {
-	return ParseIDList(p.RejectUsers)
-}
-
-func (p *DbPermissions) ParseAllowGroups() []uint64 {
-	return ParseIDList(p.AllowGroups)
-}
-
-func (p *DbPermissions) ParseRejectGroups() []uint64 {
-	return ParseIDList(p.RejectGroups)
+func (p *DbPermissions) ParseSpecialGroups() []uint64 {
+	return ParseIDList(p.SpecialGroups)
 }
 
 func ParseIDList(s string) []uint64 {
@@ -102,6 +94,32 @@ func JoinIDList(ids []uint64) string {
 	return strings.Join(strs, ",")
 }
 
+type GlobalConfig struct {
+	Key   string `gorm:"primaryKey;column:key"`
+	Value string `gorm:"column:value"` // CSV string
+}
+
+func (GlobalConfig) TableName() string {
+	return "global_configs"
+}
+
+func GetGlobalIDs(key string) []uint64 {
+	var cfg GlobalConfig
+	if err := PsqlDB.Where("key = ?", key).First(&cfg).Error; err != nil {
+		return nil
+	}
+	return ParseIDList(cfg.Value)
+}
+
+func SaveGlobalIDs(key string, ids []uint64) error {
+	val := JoinIDList(ids)
+	cfg := GlobalConfig{
+		Key:   key,
+		Value: val,
+	}
+	return PsqlDB.Save(&cfg).Error
+}
+
 func InitDB() {
 	var err error
 	// Ensure directory exists
@@ -114,7 +132,7 @@ func InitDB() {
 		log.Fatalln(err)
 	}
 	PsqlConnected = true
-	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &DbPermissions{})
+	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &DbPermissions{}, &GlobalConfig{})
 }
 
 func SaveDatabase(msg *qbot.Message) error {
@@ -150,12 +168,22 @@ func SaveDatabase(msg *qbot.Message) error {
 
 func GetCommandPermission(cmd string) *DbPermissions {
 	var perm DbPermissions
-	if err := PsqlDB.Where("command = ?", cmd).First(&perm).Error; err != nil {
+	// Prepend cmd_ prefix if not present (internal usage might pass raw name)
+	key := cmd
+	if !strings.HasPrefix(key, "cmd_") {
+		key = "cmd_" + key
+	}
+
+	if err := PsqlDB.Where("command = ?", key).First(&perm).Error; err != nil {
 		return nil
 	}
 	return &perm
 }
 
 func SaveCommandPermission(perm *DbPermissions) error {
+	// Ensure Command field has cmd_ prefix
+	if !strings.HasPrefix(perm.Command, "cmd_") {
+		perm.Command = "cmd_" + perm.Command
+	}
 	return PsqlDB.Save(perm).Error
 }

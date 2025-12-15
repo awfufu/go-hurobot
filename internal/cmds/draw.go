@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/go-hurobot/internal/config"
 	"github.com/awfufu/qbot"
 )
 

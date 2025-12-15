@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"slices"
 
 	"gopkg.in/yaml.v3"
 )
@@ -31,10 +30,8 @@ type yamlConfig struct {
 
 	// 权限配置
 	Permissions struct {
-		MasterID         uint64   `yaml:"master_id"`
-		BotID            uint64   `yaml:"bot_id"`
-		AdminIDs         []uint64 `yaml:"admin_ids,omitempty"`
-		BotOwnerGroupIDs []uint64 `yaml:"bot_owner_group_ids,omitempty"`
+		MasterID uint64 `yaml:"master_id"`
+		BotID    uint64 `yaml:"bot_id"`
 	} `yaml:"permissions"`
 
 	// 其他配置
@@ -106,57 +103,6 @@ func LoadConfigFile() {
 // GetConfigPath returns the config path
 func GetConfigPath() string {
 	return configPath
-}
-
-func GetUserPermission(userID uint64) Permission {
-	if userID == Cfg.Permissions.MasterID {
-		return Master
-	}
-	if Cfg.IsAdmin(userID) {
-		return Admin
-	}
-	return Guest
-}
-
-// IsAdmin 检查用户是否是管理员
-func (cfg *yamlConfig) IsAdmin(userID uint64) bool {
-	if userID == cfg.Permissions.MasterID {
-		return true
-	}
-	return slices.Contains(cfg.Permissions.AdminIDs, userID)
-}
-
-func AddAdmin(userID uint64) error {
-	if userID == Cfg.Permissions.MasterID {
-		return fmt.Errorf("user is already master")
-	}
-	if slices.Contains(Cfg.Permissions.AdminIDs, userID) {
-		return fmt.Errorf("user is already admin")
-	}
-	Cfg.Permissions.AdminIDs = append(Cfg.Permissions.AdminIDs, userID)
-	return SaveConfig()
-}
-
-func RemoveAdmin(userID uint64) error {
-	if userID == Cfg.Permissions.MasterID {
-		return fmt.Errorf("cannot remove master")
-	}
-	idx := -1
-	for i, id := range Cfg.Permissions.AdminIDs {
-		if id == userID {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
-		return fmt.Errorf("user is not admin")
-	}
-	Cfg.Permissions.AdminIDs = append(Cfg.Permissions.AdminIDs[:idx], Cfg.Permissions.AdminIDs[idx+1:]...)
-	return SaveConfig()
-}
-
-func GetAdmins() []uint64 {
-	return Cfg.Permissions.AdminIDs
 }
 
 var configPath string

@@ -3,15 +3,16 @@ package main
 import (
 	"log"
 
-	"github.com/awfufu/go-hurobot/cmds"
-	"github.com/awfufu/go-hurobot/config"
-	"github.com/awfufu/go-hurobot/db"
+	"github.com/awfufu/go-hurobot/internal/cmds"
+	"github.com/awfufu/go-hurobot/internal/config"
+	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 
 func main() {
 	config.LoadConfigFile()
 	db.InitDB()
+	cmds.InitCommandPermissions()
 
 	bot := qbot.NewBot(config.Cfg.HttpListen)
 	bot.ConnectNapcat(config.Cfg.HttpRemote)

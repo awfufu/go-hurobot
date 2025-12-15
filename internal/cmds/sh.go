@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/go-hurobot/internal/config"
 	"github.com/awfufu/qbot"
 )
 
@@ -96,7 +96,7 @@ func (cmd *ShCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 		rawArgs = txt.Content
 	}
 
-	isMaster := config.GetUserPermission(msg.UserID) == config.Master
+	isMaster := GetUserPermission(msg.UserID) == config.Master
 	if strings.TrimSpace(rawArgs) == "--reset" {
 		if isMaster {
 			masterWorkingDir = masterHome

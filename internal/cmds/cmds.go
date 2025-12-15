@@ -1,14 +1,15 @@
 package cmds
 
 import (
+	"log"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/google/shlex"
 
-	"github.com/awfufu/go-hurobot/config"
-	"github.com/awfufu/go-hurobot/db"
+	"github.com/awfufu/go-hurobot/internal/config"
+	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 
@@ -44,6 +45,52 @@ func init() {
 		"sh":           NewShCommand(),
 		"specialtitle": NewSpecialtitleCommand(),
 		"which":        NewWhichCommand(),
+	}
+}
+
+func InitCommandPermissions() {
+	for name, cmd := range cmdMap {
+		base := cmd.Self()
+
+		perm := db.GetCommandPermission(name)
+		if perm != nil {
+			continue
+		}
+
+		// Map config.Permission to int
+		// 0:guest, 1:admin, 2:master
+		var userAllow int
+		switch base.Permission {
+		case config.Guest:
+			userAllow = 0
+		case config.Admin:
+			userAllow = 1
+		case config.Master:
+			userAllow = 2
+		default:
+			userAllow = 2
+		}
+
+		newPerm := &db.DbPermissions{
+			Command:          name,
+			UserAllow:        userAllow,
+			GroupEnable:      0, // default disable
+			SpecialUsers:     "",
+			IsWhitelistUsers: 0, // blacklist mode by default (empty blacklist = allow nobody? No, blacklist means if in list then block. If list empty, all allowed? Wait. Logic check needed.)
+			// Wait, if IsWhitelist, only those in list are allowed.
+			// If IsBlacklist (0), those in list are blocked.
+			// Default blacklist empty means NO special blocks.
+			// BUT GroupEnable is 0 (disable). So groups are disabled by default.
+			// UserAllow depends on role.
+			SpecialGroups:     "",
+			IsWhitelistGroups: 0,
+		}
+
+		if err := db.SaveCommandPermission(newPerm); err != nil {
+			log.Printf("Failed to init permission for %s: %v", name, err)
+		} else {
+			log.Printf("Initialized permission for command: %s (user_allow: %d)", name, userAllow)
+		}
 	}
 }
 
@@ -227,61 +274,88 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 	// 2. Load Permissions from DB
 	perm := db.GetCommandPermission(cmdName)
 
-	var userDefault string = "master"
-	var groupDefault string = "disable"
-	var allowUsers []uint64
-	var rejectUsers []uint64
-	var allowGroups []uint64
-	var rejectGroups []uint64
+	var userAllow int = 2   // default master
+	var groupEnable int = 0 // default disable
+	var specialUsers []uint64
+	var isWhitelistUsers int = 0 // default blacklist
+	var specialGroups []uint64
+	var isWhitelistGroup int = 0 // default blacklist
 
 	if perm != nil {
-		userDefault = perm.UserDefault
-		groupDefault = perm.GroupDefault
-		allowUsers = perm.ParseAllowUsers()
-		rejectUsers = perm.ParseRejectUsers()
-		allowGroups = perm.ParseAllowGroups()
-		rejectGroups = perm.ParseRejectGroups()
+		userAllow = perm.UserAllow
+		groupEnable = perm.GroupEnable
+		specialUsers = perm.ParseSpecialUsers()
+		isWhitelistUsers = perm.IsWhitelistUsers
+		specialGroups = perm.ParseSpecialGroups()
+		isWhitelistGroup = perm.IsWhitelistGroups
 	}
 
-	// 3. User Allow/Reject Lists
-	if slices.Contains(rejectUsers, userID) {
-		return false
-	}
-	if slices.Contains(allowUsers, userID) {
-		return true
+	// 3. User Special List Check
+	if slices.Contains(specialUsers, userID) {
+		if isWhitelistUsers == 1 {
+			// Whitelist mode: User in list -> Allow
+			return true
+		} else {
+			// Blacklist mode: User in list -> Block
+			return false
+		}
 	}
 
 	// 4. User Role Check
-	userRole := config.GetUserPermission(userID)
+	userRole := GetUserPermission(userID)
 	var requiredPerm config.Permission
-	switch userDefault {
-	case "guest":
+	// Map DB int (0,1,2) to config.Permission
+	switch userAllow {
+	case 0:
 		requiredPerm = config.Guest
-	case "admin":
+	case 1:
 		requiredPerm = config.Admin
-	case "master":
+	case 2:
 		requiredPerm = config.Master
 	default:
 		requiredPerm = config.Master
 	}
+
 	if userRole < requiredPerm {
 		return false
 	}
 
-	// 5. Group Allow/Reject Lists
-	if slices.Contains(rejectGroups, groupID) {
-		return false
-	}
-	if slices.Contains(allowGroups, groupID) {
-		return true
+	// 5. Group Special List Check
+	if slices.Contains(specialGroups, groupID) {
+		if isWhitelistGroup == 1 {
+			// Whitelist mode: Group in list -> Allow
+			return true
+		} else {
+			// Blacklist mode: Group in list -> Block
+			return false
+		}
 	}
 
-	// 6. Group Default Check
-	if groupDefault == "disable" {
-		return false
+	// 6. Group Enable Check
+	// 0: disable, 1: enable
+	if groupEnable == 1 {
+		return true
 	}
-	// enable
-	return true
+	// disable
+	return false
+}
+
+func GetUserPermission(userID uint64) config.Permission {
+	if userID == config.Cfg.Permissions.MasterID {
+		return config.Master
+	}
+	if IsAdmin(userID) {
+		return config.Admin
+	}
+	return config.Guest
+}
+
+func IsAdmin(userID uint64) bool {
+	if userID == config.Cfg.Permissions.MasterID {
+		return true
+	}
+	admins := db.GetGlobalIDs("admin_ids")
+	return slices.Contains(admins, userID)
 }
 
 func decodeSpecialChars(raw string) string {
