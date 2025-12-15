@@ -32,13 +32,10 @@ type yamlConfig struct {
 	} `yaml:"api_keys"`
 
 	// PostgreSQL 配置
-	PostgreSQL struct {
-		Host     string `yaml:"host"`
-		Port     uint16 `yaml:"port"`
-		User     string `yaml:"user"`
-		Password string `yaml:"password"`
-		DbName   string `yaml:"dbname"`
-	} `yaml:"postgresql"`
+	// SQLite 配置
+	SQLite struct {
+		Path string `yaml:"path"`
+	} `yaml:"sqlite"`
 
 	// Python 配置
 	Python struct {
@@ -110,12 +107,9 @@ func LoadConfig(configPath string) error {
 		Cfg.Permissions.BotID = 3552586437
 	}
 
-	// PostgreSQL 默认值
-	if Cfg.PostgreSQL.Host == "" {
-		Cfg.PostgreSQL.Host = "127.0.0.1"
-	}
-	if Cfg.PostgreSQL.Port == 0 {
-		Cfg.PostgreSQL.Port = 5432
+	// SQLite 默认值
+	if Cfg.SQLite.Path == "" {
+		Cfg.SQLite.Path = "db/bot.db"
 	}
 
 	// Longport 默认值

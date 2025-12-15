@@ -1,15 +1,15 @@
 package db
 
 import (
-	"fmt"
 	"log"
-	"strconv"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/awfufu/go-hurobot/config"
 	"github.com/awfufu/qbot"
 
-	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -18,52 +18,46 @@ var PsqlDB *gorm.DB = nil
 var PsqlConnected bool = false
 
 type dbUsers struct {
-	UserID     uint64 `gorm:"primaryKey;column:user_id"`
-	Name       string `gorm:"not null;column:name"`
-	Nickname   string `gorm:"column:nick_name"`
-	Summary    string `gorm:"column:summary"`
-	TokenUsage uint64 `gorm:"column:token_usage"`
+	UserID uint64 `gorm:"primaryKey;column:user_id"`
+	Name   string `gorm:"not null;column:name"`
+}
+
+func (dbUsers) TableName() string {
+	return "users"
 }
 
 type dbMessages struct {
 	MsgID   uint64    `gorm:"primaryKey;column:msg_id"`
-	UserID  uint64    `gorm:"not null;column:user_id"`
-	GroupID uint64    `gorm:"not null;column:group_id"`
-	Content string    `gorm:"not null;column:content"`
+	UserID  uint64    `gorm:"not null;column:user_id;index"`
+	GroupID uint64    `gorm:"not null;column:group_id;index"`
 	Raw     string    `gorm:"not null;column:raw"`
-	Deleted bool      `gorm:"column:deleted"`
-	Time    time.Time `gorm:"not null;column:time"`
+	Time    time.Time `gorm:"not null;column:time;index"`
 }
 
-type GroupRconConfigs struct {
-	GroupID  uint64 `gorm:"primaryKey;column:group_id"`
-	Address  string `gorm:"not null;column:address"`
-	Password string `gorm:"not null;column:password"`
-	Enabled  bool   `gorm:"not null;column:enabled;default:false"`
+func (dbMessages) TableName() string {
+	return "messages"
 }
 
 func InitDB() {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		config.Cfg.PostgreSQL.Host,
-		strconv.Itoa(int(config.Cfg.PostgreSQL.Port)),
-		config.Cfg.PostgreSQL.User,
-		config.Cfg.PostgreSQL.Password,
-		config.Cfg.PostgreSQL.DbName,
-	)
 	var err error
-	if PsqlDB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{}); err != nil {
+	// Ensure directory exists
+	dbPath := config.Cfg.SQLite.Path
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		log.Fatalf("failed to create database directory: %v", err)
+	}
+
+	if PsqlDB, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{}); err != nil {
 		log.Fatalln(err)
 	}
 	PsqlConnected = true
-	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &GroupRconConfigs{})
+	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{})
 }
 
 func SaveDatabase(msg *qbot.Message) error {
 	return PsqlDB.Transaction(func(tx *gorm.DB) error {
 		user := dbUsers{
-			UserID:   msg.UserID,
-			Name:     msg.Name,
-			Nickname: msg.GroupCard,
+			UserID: msg.UserID,
+			Name:   msg.Name,
 		}
 
 		if err := tx.Clauses(clause.OnConflict{
@@ -80,7 +74,6 @@ func SaveDatabase(msg *qbot.Message) error {
 			MsgID:   uint64(msg.MsgID),
 			UserID:  msg.UserID,
 			GroupID: msg.GroupID,
-			Content: msg.Raw,
 			Raw:     msg.Raw,
 			Time:    time.Unix(int64(msg.Time), 0),
 		}
