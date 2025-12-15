@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/awfufu/go-hurobot/config"
@@ -38,6 +40,68 @@ func (dbMessages) TableName() string {
 	return "messages"
 }
 
+type DbPermissions struct {
+	Command      string `gorm:"primaryKey;column:command"`
+	UserDefault  string `gorm:"not null;column:user_default;default:master"`   // guest, admin, master
+	GroupDefault string `gorm:"not null;column:group_default;default:disable"` // enable, disable
+	AllowUsers   string `gorm:"column:allow_users"`                            // CSV string: "123,456"
+	RejectUsers  string `gorm:"column:reject_users"`                           // CSV string: "123,456"
+	AllowGroups  string `gorm:"column:allow_groups"`                           // CSV string: "123,456"
+	RejectGroups string `gorm:"column:reject_groups"`                          // CSV string: "123,456"
+}
+
+func (DbPermissions) TableName() string {
+	return "permissions"
+}
+
+func (p *DbPermissions) ParseAllowUsers() []uint64 {
+	return ParseIDList(p.AllowUsers)
+}
+
+func (p *DbPermissions) ParseRejectUsers() []uint64 {
+	return ParseIDList(p.RejectUsers)
+}
+
+func (p *DbPermissions) ParseAllowGroups() []uint64 {
+	return ParseIDList(p.AllowGroups)
+}
+
+func (p *DbPermissions) ParseRejectGroups() []uint64 {
+	return ParseIDList(p.RejectGroups)
+}
+
+func ParseIDList(s string) []uint64 {
+	if s == "" {
+		return nil
+	}
+	// Simple split by comma
+	// Assuming valid string like "123,456"
+	// To be safe against empty parts like "123,,456", we can filter
+	// But user said "only digits and commas".
+	parts := strings.Split(s, ",")
+	res := make([]uint64, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if val, err := strconv.ParseUint(part, 10, 64); err == nil {
+			res = append(res, val)
+		}
+	}
+	return res
+}
+
+func JoinIDList(ids []uint64) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = strconv.FormatUint(id, 10)
+	}
+	return strings.Join(strs, ",")
+}
+
 func InitDB() {
 	var err error
 	// Ensure directory exists
@@ -50,7 +114,7 @@ func InitDB() {
 		log.Fatalln(err)
 	}
 	PsqlConnected = true
-	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{})
+	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &DbPermissions{})
 }
 
 func SaveDatabase(msg *qbot.Message) error {
@@ -82,4 +146,16 @@ func SaveDatabase(msg *qbot.Message) error {
 		}
 		return nil
 	})
+}
+
+func GetCommandPermission(cmd string) *DbPermissions {
+	var perm DbPermissions
+	if err := PsqlDB.Where("command = ?", cmd).First(&perm).Error; err != nil {
+		return nil
+	}
+	return &perm
+}
+
+func SaveCommandPermission(perm *DbPermissions) error {
+	return PsqlDB.Save(perm).Error
 }

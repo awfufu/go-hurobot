@@ -13,8 +13,8 @@ func main() {
 	config.LoadConfigFile()
 	db.InitDB()
 
-	bot := qbot.NewBot(config.Cfg.ReverseHttpListen)
-	bot.ConnectNapcat(config.Cfg.NapcatHttpServer)
+	bot := qbot.NewBot(config.Cfg.HttpListen)
+	bot.ConnectNapcat(config.Cfg.HttpRemote)
 
 	bot.OnMessage(func(b *qbot.Bot, msg *qbot.Message) {
 		if msg.ChatType != qbot.Group {

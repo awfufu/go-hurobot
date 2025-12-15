@@ -1,12 +1,14 @@
 package cmds
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/google/shlex"
 
 	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/go-hurobot/db"
 	"github.com/awfufu/qbot"
 )
 
@@ -37,6 +39,7 @@ func init() {
 		"essence":      NewEssenceCommand(),
 		"fx":           NewErCommand(),
 		"group":        NewGroupCommand(),
+		"perm":         NewPermCommand(),
 		"psql":         NewPsqlCommand(),
 		"sh":           NewShCommand(),
 		"specialtitle": NewSpecialtitleCommand(),
@@ -59,7 +62,7 @@ func HandleCommand(b *qbot.Bot, msg *qbot.Message) {
 	cmdBase := cmd.Self()
 
 	// check permission
-	if !checkCmdPermission(cmdBase.Name, msg.UserID) {
+	if !checkCmdPermission(cmdBase.Name, msg.UserID, msg.GroupID) {
 		b.SendGroupMsg(msg.GroupID, cmdBase.Name+": Permission denied")
 		return
 	}
@@ -210,44 +213,75 @@ func isHelpRequest(args []qbot.MsgItem) bool {
 }
 
 func getCmdPermLevel(cmdName string) config.Permission {
-	cmdCfg := config.Cfg.GetCmdConfig(cmdName)
-	if cmdCfg == nil {
-		return config.Master
-	}
-	return cmdCfg.GetPermissionLevel()
+	// Deprecated or can read from DB for default if permission struct changes
+	// For now, logic handled in checkCmdPermission
+	return config.Master
 }
 
-func checkCmdPermission(cmdName string, userID uint64) bool {
-	cmdCfg := config.Cfg.GetCmdConfig(cmdName)
-
-	// If not configured, use default permission check
-	if cmdCfg == nil {
+func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
+	// 1. Master Bypass
+	if userID == config.Cfg.Permissions.MasterID {
 		return true
 	}
 
-	userPerm := config.GetUserPermission(userID)
-	requiredPerm := cmdCfg.GetPermissionLevel()
+	// 2. Load Permissions from DB
+	perm := db.GetCommandPermission(cmdName)
 
-	// Master users are not restricted by reject_users
-	if userPerm == config.Master {
+	var userDefault string = "master"
+	var groupDefault string = "disable"
+	var allowUsers []uint64
+	var rejectUsers []uint64
+	var allowGroups []uint64
+	var rejectGroups []uint64
+
+	if perm != nil {
+		userDefault = perm.UserDefault
+		groupDefault = perm.GroupDefault
+		allowUsers = perm.ParseAllowUsers()
+		rejectUsers = perm.ParseRejectUsers()
+		allowGroups = perm.ParseAllowGroups()
+		rejectGroups = perm.ParseRejectGroups()
+	}
+
+	// 3. User Allow/Reject Lists
+	if slices.Contains(rejectUsers, userID) {
+		return false
+	}
+	if slices.Contains(allowUsers, userID) {
 		return true
 	}
 
-	// Check reject_users (effective when command permission < master)
-	if requiredPerm < config.Master && cmdCfg.IsInRejectList(userID) {
+	// 4. User Role Check
+	userRole := config.GetUserPermission(userID)
+	var requiredPerm config.Permission
+	switch userDefault {
+	case "guest":
+		requiredPerm = config.Guest
+	case "admin":
+		requiredPerm = config.Admin
+	case "master":
+		requiredPerm = config.Master
+	default:
+		requiredPerm = config.Master
+	}
+	if userRole < requiredPerm {
 		return false
 	}
 
-	// Check allow_users (effective when command permission > guest)
-	if requiredPerm > config.Guest {
-		// If there is an allow_users list, only allow users in the list
-		if len(cmdCfg.AllowUsers) > 0 {
-			return cmdCfg.IsInAllowList(userID)
-		}
+	// 5. Group Allow/Reject Lists
+	if slices.Contains(rejectGroups, groupID) {
+		return false
+	}
+	if slices.Contains(allowGroups, groupID) {
+		return true
 	}
 
-	// Check basic permission
-	return userPerm >= requiredPerm
+	// 6. Group Default Check
+	if groupDefault == "disable" {
+		return false
+	}
+	// enable
+	return true
 }
 
 func decodeSpecialChars(raw string) string {
