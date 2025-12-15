@@ -1,26 +1,31 @@
 package main
 
 import (
-	"fmt"
-	"go-hurobot/config"
-	"go-hurobot/qbot"
-	"os"
-	"os/signal"
-	"syscall"
+	"log"
+
+	"github.com/awfufu/go-hurobot/cmds"
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/go-hurobot/db"
+	"github.com/awfufu/qbot"
 )
 
 func main() {
-	// 初始化配置
 	config.LoadConfigFile()
-	qbot.InitDB()
+	db.InitDB()
 
-	bot := qbot.NewClient()
-	defer bot.Close()
+	bot := qbot.NewBot(config.Cfg.ReverseHttpListen)
+	bot.ConnectNapcat(config.Cfg.NapcatHttpServer)
 
-	bot.HandleMessage(messageHandler)
+	bot.OnMessage(func(b *qbot.Bot, msg *qbot.Message) {
+		if msg.ChatType != qbot.Group {
+			return
+		}
+		defer db.SaveDatabase(msg)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	stopSignal := <-stop
-	fmt.Println("shutting down:", stopSignal.String())
+		if msg.UserID != config.Cfg.Permissions.BotID {
+			cmds.HandleCommand(b, msg)
+		}
+	})
+
+	log.Fatal(bot.Run())
 }

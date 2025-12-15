@@ -1,11 +1,13 @@
-package qbot
+package db
 
 import (
 	"fmt"
-	"go-hurobot/config"
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -15,7 +17,7 @@ import (
 var PsqlDB *gorm.DB = nil
 var PsqlConnected bool = false
 
-type Users struct {
+type dbUsers struct {
 	UserID     uint64 `gorm:"primaryKey;column:user_id"`
 	Name       string `gorm:"not null;column:name"`
 	Nickname   string `gorm:"column:nick_name"`
@@ -23,24 +25,14 @@ type Users struct {
 	TokenUsage uint64 `gorm:"column:token_usage"`
 }
 
-type Messages struct {
+type dbMessages struct {
 	MsgID   uint64    `gorm:"primaryKey;column:msg_id"`
 	UserID  uint64    `gorm:"not null;column:user_id"`
 	GroupID uint64    `gorm:"not null;column:group_id"`
 	Content string    `gorm:"not null;column:content"`
 	Raw     string    `gorm:"not null;column:raw"`
 	Deleted bool      `gorm:"column:deleted"`
-	IsCmd   bool      `gorm:"column:is_cmd"`
 	Time    time.Time `gorm:"not null;column:time"`
-}
-
-type UserEvents struct {
-	UserID    uint64    `gorm:"primaryKey;column:user_id"`
-	EventIdx  int       `gorm:"primaryKey;column:event_idx"`
-	MsgRegex  string    `gorm:"not null;column:msg_regex"`
-	ReplyText string    `gorm:"not null;column:reply_text"`
-	RandProb  float32   `gorm:"not null;column:rand_prob;default:1.0"`
-	CreatedAt time.Time `gorm:"not null;column:created_at;default:now()"`
 }
 
 type GroupRconConfigs struct {
@@ -48,12 +40,6 @@ type GroupRconConfigs struct {
 	Address  string `gorm:"not null;column:address"`
 	Password string `gorm:"not null;column:password"`
 	Enabled  bool   `gorm:"not null;column:enabled;default:false"`
-}
-
-type LegacyGame struct {
-	UserID  uint64 `gorm:"primaryKey;column:user_id"`
-	Energy  int    `gorm:"not null;column:energy;default:0"`
-	Balance int    `gorm:"not null;column:balance;default:0"`
 }
 
 func InitDB() {
@@ -69,15 +55,15 @@ func InitDB() {
 		log.Fatalln(err)
 	}
 	PsqlConnected = true
-	PsqlDB.AutoMigrate(&Users{}, &Messages{}, &UserEvents{}, &GroupRconConfigs{}, &LegacyGame{})
+	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &GroupRconConfigs{})
 }
 
-func SaveDatabase(msg *Message, isCmd bool) error {
+func SaveDatabase(msg *qbot.Message) error {
 	return PsqlDB.Transaction(func(tx *gorm.DB) error {
-		user := Users{
+		user := dbUsers{
 			UserID:   msg.UserID,
-			Name:     msg.Nickname,
-			Nickname: msg.Card,
+			Name:     msg.Name,
+			Nickname: msg.GroupCard,
 		}
 
 		if err := tx.Clauses(clause.OnConflict{
@@ -90,14 +76,12 @@ func SaveDatabase(msg *Message, isCmd bool) error {
 		}).Where("users.name <> EXCLUDED.name").Create(&user).Error; err != nil {
 			return err
 		}
-		newMessage := Messages{
-			MsgID:   msg.MsgID,
+		newMessage := dbMessages{
+			MsgID:   uint64(msg.MsgID),
 			UserID:  msg.UserID,
 			GroupID: msg.GroupID,
-			Content: msg.Content,
+			Content: msg.Raw,
 			Raw:     msg.Raw,
-			Deleted: false,
-			IsCmd:   isCmd,
 			Time:    time.Unix(int64(msg.Time), 0),
 		}
 		if err := tx.Create(&newMessage).Error; err != nil {

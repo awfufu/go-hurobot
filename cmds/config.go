@@ -2,10 +2,11 @@ package cmds
 
 import (
 	"fmt"
-	"go-hurobot/config"
-	"go-hurobot/qbot"
 	"strconv"
 	"strings"
+
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
 const configHelpMsg string = `Manage bot configuration.
@@ -35,12 +36,11 @@ type ConfigCommand struct {
 func NewConfigCommand() *ConfigCommand {
 	return &ConfigCommand{
 		cmdBase: cmdBase{
-			Name:        "config",
-			HelpMsg:     configHelpMsg,
-			Permission:  config.Admin,
-			AllowPrefix: false,
-			NeedRawMsg:  false,
-			MinArgs:     2,
+			Name:       "config",
+			HelpMsg:    configHelpMsg,
+			Permission: config.Admin,
+			NeedRawMsg: false,
+			MinArgs:    2,
 		},
 	}
 }
@@ -49,38 +49,61 @@ func (cmd *ConfigCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *ConfigCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
-	subCmd := args[1]
-	switch subCmd {
-	case "admin":
-		cmd.handleAdmin(c, args, src)
-	case "allow":
-		cmd.handleAllow(c, args, src)
-	case "reject":
-		cmd.handleReject(c, args, src)
-	case "reload":
-		cmd.handleReload(c, src)
-	default:
-		c.SendMsg(src.GroupID, src.UserID, "Unknown subcommand: "+subCmd)
-	}
-}
-
-func (cmd *ConfigCommand) handleAdmin(c *qbot.Client, args []string, src *srcMsg) {
-	if len(args) < 3 {
-		c.SendMsg(src.GroupID, src.UserID, "Usage: config admin [add|rm|list] [@user...]")
+func (cmd *ConfigCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+	if len(msg.Array) < 2 {
+		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
 		return
 	}
 
-	action := args[2]
+	getText := func(i int) string {
+		if i < len(msg.Array) {
+			if txt := msg.Array[i].GetTextItem(); txt != nil {
+				return txt.Content
+			}
+		}
+		return ""
+	}
+
+	subCmd := getText(1)
+	switch subCmd {
+	case "admin":
+		cmd.handleAdmin(b, msg)
+	case "allow":
+		cmd.handleAllow(b, msg)
+	case "reject":
+		cmd.handleReject(b, msg)
+	case "reload":
+		cmd.handleReload(b, msg)
+	default:
+		b.SendGroupMsg(msg.GroupID, "Unknown subcommand: "+subCmd)
+	}
+}
+
+func (cmd *ConfigCommand) handleAdmin(b *qbot.Bot, msg *qbot.Message) {
+	getText := func(i int) string {
+		if i < len(msg.Array) {
+			if txt := msg.Array[i].GetTextItem(); txt != nil {
+				return txt.Content
+			}
+		}
+		return ""
+	}
+
+	if len(msg.Array) < 3 {
+		b.SendGroupMsg(msg.GroupID, "Usage: config admin [add|rm|list] [@user...]")
+		return
+	}
+
+	action := getText(2)
 	switch action {
 	case "add":
-		if len(args) < 4 {
-			c.SendMsg(src.GroupID, src.UserID, "Usage: config admin add @user...")
+		if len(msg.Array) < 4 {
+			b.SendGroupMsg(msg.GroupID, "Usage: config admin add @user...")
 			return
 		}
-		userIDs := extractUserIDs(args[3:])
+		userIDs := extractUserIDs(msg.Array)
 		if len(userIDs) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Please mention at least one user with @")
+			b.SendGroupMsg(msg.GroupID, "Please mention at least one user with @")
 			return
 		}
 
@@ -93,16 +116,16 @@ func (cmd *ConfigCommand) handleAdmin(c *qbot.Client, args []string, src *srcMsg
 				results = append(results, fmt.Sprintf("✅ %d: set as admin", userID))
 			}
 		}
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(results, "\n"))
+		b.SendGroupMsg(msg.GroupID, strings.Join(results, "\n"))
 
 	case "rm":
-		if len(args) < 4 {
-			c.SendMsg(src.GroupID, src.UserID, "Usage: config admin rm @user...")
+		if len(msg.Array) < 4 {
+			b.SendGroupMsg(msg.GroupID, "Usage: config admin rm @user...")
 			return
 		}
-		userIDs := extractUserIDs(args[3:])
+		userIDs := extractUserIDs(msg.Array)
 		if len(userIDs) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Please mention at least one user with @")
+			b.SendGroupMsg(msg.GroupID, "Please mention at least one user with @")
 			return
 		}
 
@@ -115,64 +138,72 @@ func (cmd *ConfigCommand) handleAdmin(c *qbot.Client, args []string, src *srcMsg
 				results = append(results, fmt.Sprintf("✅ %d: removed from admin", userID))
 			}
 		}
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(results, "\n"))
+		b.SendGroupMsg(msg.GroupID, strings.Join(results, "\n"))
 
 	case "list":
 		admins := config.GetAdmins()
 		if len(admins) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Admin list is empty")
+			b.SendGroupMsg(msg.GroupID, "Admin list is empty")
 		} else {
 			adminStrs := make([]string, len(admins))
 			for i, u := range admins {
 				adminStrs[i] = strconv.FormatUint(u, 10)
 			}
-			c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Admins: %s", strings.Join(adminStrs, ", ")))
+			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Admins: %s", strings.Join(adminStrs, ", ")))
 		}
 
 	default:
-		c.SendMsg(src.GroupID, src.UserID, "Unknown action: "+action)
+		b.SendGroupMsg(msg.GroupID, "Unknown action: "+action)
 	}
 }
 
-func extractUserIDs(args []string) []uint64 {
+func extractUserIDs(args []qbot.MsgItem) []uint64 {
 	userIDs := make([]uint64, 0, len(args))
 	seen := make(map[uint64]bool)
 
 	for _, arg := range args {
-		if !strings.HasPrefix(arg, atPrefix) {
-			continue
-		}
-		userID := str2uin64(strings.TrimPrefix(arg, atPrefix))
-		if userID != 0 && !seen[userID] {
-			seen[userID] = true
-			userIDs = append(userIDs, userID)
+		if atItem := arg.GetAtItem(); atItem != nil {
+			userID := atItem.TargetID
+			if userID != 0 && !seen[userID] {
+				seen[userID] = true
+				userIDs = append(userIDs, userID)
+			}
 		}
 	}
 	return userIDs
 }
 
-func (cmd *ConfigCommand) handleAllow(c *qbot.Client, args []string, src *srcMsg) {
-	if len(args) < 3 {
-		c.SendMsg(src.GroupID, src.UserID, "Usage: config allow <cmd> [add|rm|list] [@user...]")
+func (cmd *ConfigCommand) handleAllow(b *qbot.Bot, msg *qbot.Message) {
+	getText := func(i int) string {
+		if i < len(msg.Array) {
+			if txt := msg.Array[i].GetTextItem(); txt != nil {
+				return txt.Content
+			}
+		}
+		return ""
+	}
+
+	if len(msg.Array) < 3 {
+		b.SendGroupMsg(msg.GroupID, "Usage: config allow <cmd> [add|rm|list] [@user...]")
 		return
 	}
 
-	cmdName := args[2]
-	if len(args) < 4 {
-		c.SendMsg(src.GroupID, src.UserID, "Usage: config allow <cmd> [add|rm|list] [@user...]")
+	cmdName := getText(2)
+	if len(msg.Array) < 4 {
+		b.SendGroupMsg(msg.GroupID, "Usage: config allow <cmd> [add|rm|list] [@user...]")
 		return
 	}
 
-	action := args[3]
+	action := getText(3)
 	switch action {
 	case "add":
-		if len(args) < 5 {
-			c.SendMsg(src.GroupID, src.UserID, "Usage: config allow <cmd> add @user...")
+		if len(msg.Array) < 5 {
+			b.SendGroupMsg(msg.GroupID, "Usage: config allow <cmd> add @user...")
 			return
 		}
-		userIDs := extractUserIDs(args[4:])
+		userIDs := extractUserIDs(msg.Array)
 		if len(userIDs) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Please mention at least one user with @")
+			b.SendGroupMsg(msg.GroupID, "Please mention at least one user with @")
 			return
 		}
 
@@ -185,16 +216,16 @@ func (cmd *ConfigCommand) handleAllow(c *qbot.Client, args []string, src *srcMsg
 				results = append(results, fmt.Sprintf("✅ %d: added to %s allow list", userID, cmdName))
 			}
 		}
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(results, "\n"))
+		b.SendGroupMsg(msg.GroupID, strings.Join(results, "\n"))
 
 	case "rm":
-		if len(args) < 5 {
-			c.SendMsg(src.GroupID, src.UserID, "Usage: config allow <cmd> rm @user...")
+		if len(msg.Array) < 5 {
+			b.SendGroupMsg(msg.GroupID, "Usage: config allow <cmd> rm @user...")
 			return
 		}
-		userIDs := extractUserIDs(args[4:])
+		userIDs := extractUserIDs(msg.Array)
 		if len(userIDs) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Please mention at least one user with @")
+			b.SendGroupMsg(msg.GroupID, "Please mention at least one user with @")
 			return
 		}
 
@@ -207,50 +238,59 @@ func (cmd *ConfigCommand) handleAllow(c *qbot.Client, args []string, src *srcMsg
 				results = append(results, fmt.Sprintf("✅ %d: removed from %s allow list", userID, cmdName))
 			}
 		}
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(results, "\n"))
+		b.SendGroupMsg(msg.GroupID, strings.Join(results, "\n"))
 
 	case "list":
 		users, err := config.GetAllowUsers(cmdName)
 		if err != nil {
-			c.SendMsg(src.GroupID, src.UserID, "Failed to get allow list: "+err.Error())
+			b.SendGroupMsg(msg.GroupID, "Failed to get allow list: "+err.Error())
 			return
 		}
 		if len(users) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Allow list for %s is empty", cmdName))
+			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Allow list for %s is empty", cmdName))
 		} else {
 			userStrs := make([]string, len(users))
 			for i, u := range users {
 				userStrs[i] = strconv.FormatUint(u, 10)
 			}
-			c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Allow list for %s: %s", cmdName, strings.Join(userStrs, ", ")))
+			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Allow list for %s: %s", cmdName, strings.Join(userStrs, ", ")))
 		}
 	default:
-		c.SendMsg(src.GroupID, src.UserID, "Unknown action: "+action)
+		b.SendGroupMsg(msg.GroupID, "Unknown action: "+action)
 	}
 }
 
-func (cmd *ConfigCommand) handleReject(c *qbot.Client, args []string, src *srcMsg) {
-	if len(args) < 3 {
-		c.SendMsg(src.GroupID, src.UserID, "Usage: config reject <cmd> [add|rm|list] [@user...]")
+func (cmd *ConfigCommand) handleReject(b *qbot.Bot, msg *qbot.Message) {
+	getText := func(i int) string {
+		if i < len(msg.Array) {
+			if txt := msg.Array[i].GetTextItem(); txt != nil {
+				return txt.Content
+			}
+		}
+		return ""
+	}
+
+	if len(msg.Array) < 3 {
+		b.SendGroupMsg(msg.GroupID, "Usage: config reject <cmd> [add|rm|list] [@user...]")
 		return
 	}
 
-	cmdName := args[2]
-	if len(args) < 4 {
-		c.SendMsg(src.GroupID, src.UserID, "Usage: config reject <cmd> [add|rm|list] [@user...]")
+	cmdName := getText(2)
+	if len(msg.Array) < 4 {
+		b.SendGroupMsg(msg.GroupID, "Usage: config reject <cmd> [add|rm|list] [@user...]")
 		return
 	}
 
-	action := args[3]
+	action := getText(3)
 	switch action {
 	case "add":
-		if len(args) < 5 {
-			c.SendMsg(src.GroupID, src.UserID, "Usage: config reject <cmd> add @user...")
+		if len(msg.Array) < 5 {
+			b.SendGroupMsg(msg.GroupID, "Usage: config reject <cmd> add @user...")
 			return
 		}
-		userIDs := extractUserIDs(args[4:])
+		userIDs := extractUserIDs(msg.Array)
 		if len(userIDs) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Please mention at least one user with @")
+			b.SendGroupMsg(msg.GroupID, "Please mention at least one user with @")
 			return
 		}
 
@@ -263,16 +303,16 @@ func (cmd *ConfigCommand) handleReject(c *qbot.Client, args []string, src *srcMs
 				results = append(results, fmt.Sprintf("✅ %d: added to %s reject list", userID, cmdName))
 			}
 		}
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(results, "\n"))
+		b.SendGroupMsg(msg.GroupID, strings.Join(results, "\n"))
 
 	case "rm":
-		if len(args) < 5 {
-			c.SendMsg(src.GroupID, src.UserID, "Usage: config reject <cmd> rm @user...")
+		if len(msg.Array) < 5 {
+			b.SendGroupMsg(msg.GroupID, "Usage: config reject <cmd> rm @user...")
 			return
 		}
-		userIDs := extractUserIDs(args[4:])
+		userIDs := extractUserIDs(msg.Array)
 		if len(userIDs) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, "Please mention at least one user with @")
+			b.SendGroupMsg(msg.GroupID, "Please mention at least one user with @")
 			return
 		}
 
@@ -285,33 +325,33 @@ func (cmd *ConfigCommand) handleReject(c *qbot.Client, args []string, src *srcMs
 				results = append(results, fmt.Sprintf("✅ %d: removed from %s reject list", userID, cmdName))
 			}
 		}
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(results, "\n"))
+		b.SendGroupMsg(msg.GroupID, strings.Join(results, "\n"))
 
 	case "list":
 		users, err := config.GetRejectUsers(cmdName)
 		if err != nil {
-			c.SendMsg(src.GroupID, src.UserID, "Failed to get reject list: "+err.Error())
+			b.SendGroupMsg(msg.GroupID, "Failed to get reject list: "+err.Error())
 			return
 		}
 		if len(users) == 0 {
-			c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Reject list for %s is empty", cmdName))
+			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Reject list for %s is empty", cmdName))
 		} else {
 			userStrs := make([]string, len(users))
 			for i, u := range users {
 				userStrs[i] = strconv.FormatUint(u, 10)
 			}
-			c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Reject list for %s: %s", cmdName, strings.Join(userStrs, ", ")))
+			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Reject list for %s: %s", cmdName, strings.Join(userStrs, ", ")))
 		}
 	default:
-		c.SendMsg(src.GroupID, src.UserID, "Unknown action: "+action)
+		b.SendGroupMsg(msg.GroupID, "Unknown action: "+action)
 	}
 }
 
-func (cmd *ConfigCommand) handleReload(c *qbot.Client, src *srcMsg) {
+func (cmd *ConfigCommand) handleReload(b *qbot.Bot, msg *qbot.Message) {
 	err := config.ReloadConfig()
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, "Failed to reload config: "+err.Error())
+		b.SendGroupMsg(msg.GroupID, "Failed to reload config: "+err.Error())
 	} else {
-		c.SendMsg(src.GroupID, src.UserID, "Configuration reloaded successfully")
+		b.SendGroupMsg(msg.GroupID, "Configuration reloaded successfully")
 	}
 }

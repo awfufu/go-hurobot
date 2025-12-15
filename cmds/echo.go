@@ -1,16 +1,12 @@
 package cmds
 
 import (
-	"go-hurobot/qbot"
-	"strings"
+	"github.com/awfufu/qbot"
 )
 
 const echoHelpMsg string = `Echoes messages to a target destination.
-Usage: /echo [options] <content>
-Options:
-  -d, -r  Decode special characters
-  -e      Encode special characters
-Example: /echo "Hello, world!"`
+Usage: /echo <any>
+Example: /echo helloworld`
 
 type EchoCommand struct {
 	cmdBase
@@ -19,12 +15,12 @@ type EchoCommand struct {
 func NewEchoCommand() *EchoCommand {
 	return &EchoCommand{
 		cmdBase: cmdBase{
-			Name:        "echo",
-			HelpMsg:     echoHelpMsg,
-			Permission:  getCmdPermLevel("echo"),
-			AllowPrefix: false,
-			NeedRawMsg:  false,
-			MinArgs:     2,
+			Name:       "echo",
+			HelpMsg:    echoHelpMsg,
+			Permission: getCmdPermLevel("echo"),
+
+			NeedRawMsg: false,
+			MinArgs:    2,
 		},
 	}
 }
@@ -33,15 +29,19 @@ func (cmd *EchoCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *EchoCommand) Exec(c *qbot.Client, args []string, src *srcMsg, _ int) {
-	if len(args) >= 3 && args[1][0] == '-' {
-		switch args[1] {
-		case "-r":
-			c.SendMsg(src.GroupID, src.UserID, encodeSpecialChars(src.Raw[3:]))
-		case "-d":
-			c.SendMsg(src.GroupID, src.UserID, decodeSpecialChars(args[2]))
+func (cmd *EchoCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+	result := make([]qbot.Segment, 0, 8)
+	for _, e := range msg.Array {
+		switch v := e.(type) {
+		case *qbot.TextItem:
+			result = append(result, qbot.Text(v.Content))
+		case *qbot.AtItem:
+			result = append(result, qbot.At(v.TargetID))
+		case *qbot.FaceItem:
+			result = append(result, qbot.Face(v.ID))
+		case *qbot.ImageItem:
+			result = append(result, qbot.Image(v.URL))
 		}
-	} else {
-		c.SendMsg(src.GroupID, src.UserID, strings.Join(args[1:], " "))
 	}
+	b.SendGroupMsg(msg.GroupID, result)
 }

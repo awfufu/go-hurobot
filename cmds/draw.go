@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"go-hurobot/config"
-	"go-hurobot/qbot"
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
 const drawHelpMsg string = `Generate images from text prompts.
@@ -43,12 +43,12 @@ type DrawCommand struct {
 func NewDrawCommand() *DrawCommand {
 	return &DrawCommand{
 		cmdBase: cmdBase{
-			Name:        "draw",
-			HelpMsg:     drawHelpMsg,
-			Permission:  getCmdPermLevel("draw"),
-			AllowPrefix: false,
-			NeedRawMsg:  false,
-			MinArgs:     2,
+			Name:       "draw",
+			HelpMsg:    drawHelpMsg,
+			Permission: getCmdPermLevel("draw"),
+
+			NeedRawMsg: false,
+			MinArgs:    2,
 		},
 	}
 }
@@ -57,24 +57,33 @@ func (cmd *DrawCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *DrawCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+func (cmd *DrawCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	if config.Cfg.ApiKeys.DrawApiKey == "" {
-		c.SendMsg(src.GroupID, src.UserID, "No API key")
+		b.SendGroupMsg(msg.GroupID, "No API key")
 		return
 	}
 
-	prompt, imageSize, err := parseDrawArgs(args[1:])
+	// msg.Array[0] is "/draw"
+	// Parse following args
+	var args []string
+	for i := 1; i < len(msg.Array); i++ {
+		if txt := msg.Array[i].GetTextItem(); txt != nil {
+			args = append(args, txt.Content)
+		}
+	}
+
+	prompt, imageSize, err := parseDrawArgs(args)
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, err.Error())
+		b.SendGroupMsg(msg.GroupID, err.Error())
 		return
 	}
 
 	if prompt == "" {
-		c.SendMsg(src.GroupID, src.UserID, "Please provide a prompt")
+		b.SendGroupMsg(msg.GroupID, "Please provide a prompt")
 		return
 	}
 
-	c.SendMsg(src.GroupID, src.UserID, "Image generating...")
+	b.SendGroupMsg(msg.GroupID, "Image generating...")
 
 	reqData := ImageGenerationRequest{
 		Model:         "Qwen/Qwen-Image",
@@ -86,13 +95,13 @@ func (cmd *DrawCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin i
 
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 
 	req, err := http.NewRequest("POST", config.Cfg.ApiKeys.DrawUrlBase, bytes.NewBuffer(jsonData))
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 
@@ -105,35 +114,36 @@ func (cmd *DrawCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin i
 
 	resp, err := client.Do(req)
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 
 	if resp.StatusCode != 200 {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%d\n%s", resp.StatusCode, string(body)))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%d\n%s", resp.StatusCode, string(body)))
 		return
 	}
 
 	var imgResp ImageGenerationResponse
 	if err := json.Unmarshal(body, &imgResp); err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 
 	if len(imgResp.Images) == 0 {
-		c.SendMsg(src.GroupID, src.UserID, "error: no images generated")
+		b.SendGroupMsg(msg.GroupID, "error: no images generated")
 		return
 	}
 
 	imageURL := imgResp.Images[0].URL
-	c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+qbot.CQImage(imageURL))
+	// Use b.SendGroupReplyMsg instead of manual qbot.Reply/SendMsg
+	b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, qbot.Image(imageURL))
 }
 
 func parseDrawArgs(args []string) (prompt, imageSize string, err error) {

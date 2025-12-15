@@ -1,0 +1,89 @@
+napcat_http_server: http://127.0.0.1:3000
+reverse_http_listen: 0.0.0.0:3002
+api_keys:
+  draw_url_base: https://api.siliconflow.cn/v1/images/generations
+  draw_api_key: SILICONFLOW_API_KEY
+  exchange_rate_api_key: EXCHANGE_RATE_API_KEY
+  okx_mirror_api_key: OKX_MIRROR_API_KEY
+  longport:
+    app_key: YOUR_LONGPORT_APP_KEY_HERE
+    app_secret: YOUR_LONGPORT_APP_SECRET_HERE
+    access_token: YOUR_LONGPORT_ACCESS_TOKEN_HERE
+    region: cn
+    enable_overnight: false
+postgresql:
+  host: 127.0.0.1
+  port: 5432
+  user: YOUR_POSTGRES_USER_HERE
+  password: YOUR_POSTGRES_PASSWORD_HERE
+  dbname: YOUR_POSTGRES_DBNAME_HERE
+
+permissions:
+  master_id: YOUR_MASTER_ID_HERE
+  bot_id: YOUR_BOT_ID_HERE
+  admin_ids:
+    - YOUR_ADMIN_ID_1_HERE
+    - YOUR_ADMIN_ID_2_HERE
+    - YOUR_ADMIN_ID_3_HERE
+  bot_owner_group_ids:
+    - YOUR_GROUP_ID_1_HERE
+    - YOUR_GROUP_ID_2_HERE
+  cmds:
+    - name: callme
+      permission: guest
+    - name: config
+      permission: admin
+    - name: crypto
+      permission: guest
+    - name: debug
+      permission: guest
+    - name: delete
+      permission: guest
+      reject_users:
+        - USER_ID_TO_REJECT_HERE
+    - name: dice
+      permission: guest
+    - name: draw
+      permission: guest
+    - name: echo
+      permission: guest
+    - name: essence
+      permission: guest
+    - name: event
+      permission: guest
+    - name: fx
+      permission: guest
+    - name: group
+      permission: admin
+    - name: llm
+      permission: admin
+    - name: mc
+      permission: guest
+    - name: memberinfo
+      permission: guest
+    - name: psql
+      permission: master
+    - name: py
+      permission: admin
+    - name: rcon
+      permission: admin
+    - name: rps
+      permission: guest
+    - name: sh
+      permission: master
+      allow_users:
+        - USER_ID_1_ALLOWED_HERE
+        - USER_ID_2_ALLOWED_HERE
+        - USER_ID_3_ALLOWED_HERE
+    - name: specialtitle
+      permission: guest
+    - name: testapi
+      permission: master
+    - name: which
+      permission: guest
+suppliers:
+  siliconflow:
+    base_url: https://api.siliconflow.cn/v1
+    api_key: SILICONFLOW_API_KEY
+    default_model: deepseek-ai/DeepSeek-V3
+    proxy: http://127.0.0.1:7897

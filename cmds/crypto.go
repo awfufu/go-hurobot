@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"go-hurobot/config"
-	"go-hurobot/qbot"
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
 type OkxResponse struct {
@@ -82,13 +82,13 @@ type CryptoCommand struct {
 func NewCryptoCommand() *CryptoCommand {
 	return &CryptoCommand{
 		cmdBase: cmdBase{
-			Name:        "crypto",
-			HelpMsg:     cryptoHelpMsg,
-			Permission:  getCmdPermLevel("crypto"),
-			AllowPrefix: false,
-			NeedRawMsg:  false,
-			MaxArgs:     3,
-			MinArgs:     2,
+			Name:       "crypto",
+			HelpMsg:    cryptoHelpMsg,
+			Permission: getCmdPermLevel("crypto"),
+
+			NeedRawMsg: false,
+			MaxArgs:    3,
+			MinArgs:    2,
 		},
 	}
 }
@@ -97,47 +97,59 @@ func (cmd *CryptoCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *CryptoCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
-	if len(args) == 2 {
-		coin := strings.ToUpper(args[1])
-		handleSingleCrypto(c, src, coin)
-	} else if len(args) == 3 {
-		fromCoin := strings.ToUpper(args[1])
-		toCurrency := strings.ToUpper(args[2])
-		handleCryptoCurrencyPair(c, src, fromCoin, toCurrency)
+func (cmd *CryptoCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+	if len(msg.Array) == 2 {
+		if txt := msg.Array[1].GetTextItem(); txt != nil {
+			coin := strings.ToUpper(txt.Content)
+			handleSingleCrypto(b, msg, coin)
+		}
+	} else if len(msg.Array) == 3 {
+		coin := ""
+		currency := ""
+		if txt := msg.Array[1].GetTextItem(); txt != nil {
+			coin = strings.ToUpper(txt.Content)
+		}
+		if txt := msg.Array[2].GetTextItem(); txt != nil {
+			currency = strings.ToUpper(txt.Content)
+		}
+		if coin != "" && currency != "" {
+			handleCryptoCurrencyPair(b, msg, coin, currency)
+		}
+	} else {
+		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
 	}
 }
 
-func handleSingleCrypto(c *qbot.Client, src *srcMsg, coin string) {
+func handleSingleCrypto(b *qbot.Bot, msg *qbot.Message, coin string) {
 	log.Printf("Query single cryptocurrency: %s", coin)
 	price, err := getCryptoPrice(coin, "USDT")
 	if err != nil {
 		log.Printf("Failed to query %s price: %v", coin, err)
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Query failed: %s", err.Error()))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Query failed: %s", err.Error()))
 		return
 	}
-	c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("1 %s = %s USDT", coin, price))
+	b.SendGroupMsg(msg.GroupID, fmt.Sprintf("1 %s = %s USDT", coin, price))
 }
 
-func handleCryptoCurrencyPair(c *qbot.Client, src *srcMsg, fromCoin string, toCurrency string) {
+func handleCryptoCurrencyPair(b *qbot.Bot, msg *qbot.Message, fromCoin string, toCurrency string) {
 	log.Printf("Query cryptocurrency pair: %s -> %s", fromCoin, toCurrency)
 
 	usdPrice, err := getCryptoPrice(fromCoin, "USD")
 	if err != nil {
 		log.Printf("Failed to query %s USD price: %v", fromCoin, err)
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Failed to query %s price: %s", fromCoin, err.Error()))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Failed to query %s price: %s", fromCoin, err.Error()))
 		return
 	}
 
 	usdPriceFloat, err := strconv.ParseFloat(usdPrice, 64)
 	if err != nil {
 		log.Printf("Price parsing failed: %v", err)
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Price parsing failed: %s", err.Error()))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Price parsing failed: %s", err.Error()))
 		return
 	}
 
 	if toCurrency == "USD" {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%s latest USD price: %.4f", fromCoin, usdPriceFloat))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%s latest USD price: %.4f", fromCoin, usdPriceFloat))
 		return
 	}
 
@@ -145,13 +157,13 @@ func handleCryptoCurrencyPair(c *qbot.Client, src *srcMsg, fromCoin string, toCu
 	exchangeRate, err := getExchangeRate("USD", toCurrency)
 	if err != nil {
 		log.Printf("Failed to get exchange rate: %v", err)
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Failed to get exchange rate: %s", err.Error()))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Failed to get exchange rate: %s", err.Error()))
 		return
 	}
 
 	finalPrice := usdPriceFloat * exchangeRate
 	log.Printf("Conversion complete: %s USD price %.4f, exchange rate %.4f, final price %.4f %s", fromCoin, usdPriceFloat, exchangeRate, finalPrice, toCurrency)
-	c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("1 %s=%.4f %s", fromCoin, finalPrice, toCurrency))
+	b.SendGroupMsg(msg.GroupID, fmt.Sprintf("1 %s=%.4f %s", fromCoin, finalPrice, toCurrency))
 }
 
 func getCryptoPrice(coin string, quoteCurrency string) (string, error) {
@@ -196,6 +208,11 @@ func getCryptoPrice(coin string, quoteCurrency string) (string, error) {
 
 	log.Printf("Got price: %s = %s", instId, ticker.Data[0].Last)
 	return ticker.Data[0].Last, nil
+}
+
+type ExchangeRateResponse struct {
+	Result          string             `json:"result"`
+	ConversionRates map[string]float64 `json:"conversion_rates"`
 }
 
 func getExchangeRate(baseCode string, targetCode string) (float64, error) {

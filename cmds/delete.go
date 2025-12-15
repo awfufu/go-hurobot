@@ -1,10 +1,9 @@
 package cmds
 
 import (
-	"go-hurobot/qbot"
 	"log"
-	"strconv"
-	"strings"
+
+	"github.com/awfufu/qbot"
 )
 
 const deleteHelpMsg = `Delete a message by replying to it.
@@ -17,13 +16,12 @@ type DeleteCommand struct {
 func NewDeleteCommand() *DeleteCommand {
 	return &DeleteCommand{
 		cmdBase: cmdBase{
-			Name:        "delete",
-			HelpMsg:     deleteHelpMsg,
-			Permission:  getCmdPermLevel("delete"),
-			AllowPrefix: true, // Allow prefix
-			NeedRawMsg:  false,
-			MaxArgs:     1,
-			MinArgs:     1,
+			Name:       "delete",
+			HelpMsg:    deleteHelpMsg,
+			Permission: getCmdPermLevel("delete"),
+			NeedRawMsg: false,
+			MaxArgs:    1,
+			MinArgs:    1,
 		},
 	}
 }
@@ -32,19 +30,11 @@ func (cmd *DeleteCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *DeleteCommand) Exec(c *qbot.Client, args []string, src *srcMsg, _ int) {
-	// Check for --reply= parameter
-	var replyMsgID uint64
-	if after, ok := strings.CutPrefix(args[0], "--reply="); ok {
-		if msgid, err := strconv.ParseUint(after, 10, 64); err == nil {
-			replyMsgID = msgid
-		}
-	}
-
-	if replyMsgID != 0 {
-		c.DeleteMsg(replyMsgID)
-		log.Printf("delete message %d", replyMsgID)
+func (cmd *DeleteCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+	if msg.ReplyID != 0 {
+		b.DeleteMsg(msg.ReplyID)
+		log.Printf("delete message %d", msg.ReplyID)
 	} else {
-		c.SendMsg(src.GroupID, src.UserID, "Please reply to a message to delete it, and ensure the bot has permission to delete it")
+		b.SendGroupMsg(msg.GroupID, "Please reply to a message to delete it, and ensure the bot has permission to delete it")
 	}
 }

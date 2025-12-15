@@ -1,38 +1,22 @@
 version: "3"
 services:
-  napcat:
+  qbot-psql:
+    image: postgres:17
+    container_name: qbot-psql
+    hostname: qbot-psql
     environment:
-      - NAPCAT_UID=501
-      - NAPCAT_GID=20
-      - ACCOUNT=3552586437
-    volumes:
-      - ./napcat-app:/app
-    ports:
-      - 3000:3000
-      - 3001:3001
-      - 6099:6099
-    container_name: napcat
-    restart: on-failure
-    image: mlikiowa/napcat-docker:latest
-    networks:
-      - qbot
-
-  hurobot-psql:
-    image: postgres:latest
-    container_name: hurobot-psql
-    hostname: hurobot-psql
-    environment:
-      POSTGRES_USER: hurobot
-      POSTGRES_PASSWORD: hurobot114514qwq
-      POSTGRES_DB: hurobot
+      POSTGRES_USER: qbot
+      POSTGRES_PASSWORD: qbot
+      POSTGRES_DB: qbot
     volumes:
       - ./psql-init:/docker-entrypoint-initdb.d
       - ./psql-data:/var/lib/postgresql/data
     ports:
-      - "54321:5432"
-    restart: on-failure
-    networks:
-      - qbot
+      - "5432:5432"
+    restart: always
+
 networks:
-  qbot:
-    driver: bridge
+  default:
+    name: podman
+    external: true
+

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go-hurobot/config"
-	"go-hurobot/qbot"
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/go-hurobot/db"
+	"github.com/awfufu/qbot"
 
 	"github.com/gorcon/rcon"
 	"gorm.io/gorm"
@@ -23,12 +24,12 @@ type McCommand struct {
 func NewMcCommand() *McCommand {
 	return &McCommand{
 		cmdBase: cmdBase{
-			Name:        "mc",
-			HelpMsg:     mcHelpMsg,
-			Permission:  getCmdPermLevel("mc"),
-			AllowPrefix: false,
-			NeedRawMsg:  false,
-			MinArgs:     2,
+			Name:       "mc",
+			HelpMsg:    mcHelpMsg,
+			Permission: getCmdPermLevel("mc"),
+
+			NeedRawMsg: false,
+			MinArgs:    2,
 		},
 	}
 }
@@ -37,10 +38,10 @@ func (cmd *McCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *McCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+func (cmd *McCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	// Get RCON configuration for this group
-	var rconConfig qbot.GroupRconConfigs
-	result := qbot.PsqlDB.Where("group_id = ?", src.GroupID).First(&rconConfig)
+	var rconConfig db.GroupRconConfigs
+	result := db.PsqlDB.Where("group_id = ?", msg.GroupID).First(&rconConfig)
 
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -52,23 +53,29 @@ func (cmd *McCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int
 	}
 
 	if !rconConfig.Enabled {
-		c.SendMsg(src.GroupID, src.UserID, "RCON is disabled for this group")
+		b.SendGroupMsg(msg.GroupID, "RCON is disabled for this group")
 		return
 	}
 
 	// Join all arguments after 'mc' as the command
-	command := strings.Join(args[1:], " ")
+	var parts []string
+	for i := 1; i < len(msg.Array); i++ {
+		if txt := msg.Array[i].GetTextItem(); txt != nil {
+			parts = append(parts, txt.Content)
+		}
+	}
+	command := strings.Join(parts, " ")
 
 	// Check permissions for non-master users
-	if src.UserID != config.Cfg.Permissions.MasterID && !isAllowedCommand(command) {
-		c.SendMsg(src.GroupID, src.UserID, "Permission denied. You can only use query commands.")
+	if msg.UserID != config.Cfg.Permissions.MasterID && !isAllowedCommand(command) {
+		b.SendGroupMsg(msg.GroupID, "Permission denied. You can only use query commands.")
 		return
 	}
 
 	// Execute RCON command
 	response, err := executeRconCommand(rconConfig.Address, rconConfig.Password, command)
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("RCON error: %s", err.Error()))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("RCON error: %s", err.Error()))
 		return
 	}
 
@@ -81,7 +88,7 @@ func (cmd *McCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int
 		response = "No output"
 	}
 
-	c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+response)
+	b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, response)
 }
 
 func executeRconCommand(address, password, command string) (string, error) {

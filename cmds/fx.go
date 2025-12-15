@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"go-hurobot/config"
-	"go-hurobot/qbot"
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
-type ExchangeRateResponse struct {
+type FxRateResponse struct {
 	Result          string             `json:"result"`
 	BaseCode        string             `json:"base_code"`
 	ConversionRates map[string]float64 `json:"conversion_rates"`
@@ -29,13 +29,13 @@ type ErCommand struct {
 func NewErCommand() *ErCommand {
 	return &ErCommand{
 		cmdBase: cmdBase{
-			Name:        "fx",
-			HelpMsg:     erHelpMsg,
-			Permission:  getCmdPermLevel("fx"),
-			AllowPrefix: false,
-			NeedRawMsg:  false,
-			MaxArgs:     3,
-			MinArgs:     3,
+			Name:       "fx",
+			HelpMsg:    erHelpMsg,
+			Permission: getCmdPermLevel("fx"),
+
+			NeedRawMsg: false,
+			MaxArgs:    3,
+			MinArgs:    3,
 		},
 	}
 }
@@ -44,13 +44,27 @@ func (cmd *ErCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *ErCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
+func (cmd *ErCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	if config.Cfg.ApiKeys.ExchangeRateAPIKey == "" {
 		return
 	}
 
-	fromCurrency := strings.ToUpper(args[1])
-	toCurrency := strings.ToUpper(args[2])
+	if len(msg.Array) < 3 {
+		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		return
+	}
+
+	getText := func(i int) string {
+		if i < len(msg.Array) {
+			if txt := msg.Array[i].GetTextItem(); txt != nil {
+				return txt.Content
+			}
+		}
+		return ""
+	}
+
+	fromCurrency := strings.ToUpper(getText(1))
+	toCurrency := strings.ToUpper(getText(2))
 
 	url := fmt.Sprintf("https://v6.exchangerate-api.com/v6/%s/latest/%s", config.Cfg.ApiKeys.ExchangeRateAPIKey, fromCurrency)
 
@@ -62,36 +76,36 @@ func (cmd *ErCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int
 
 	resp, err := client.Get(url)
 	if err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%d", resp.StatusCode))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%d", resp.StatusCode))
 		return
 	}
 
-	var exchangeData ExchangeRateResponse
+	var exchangeData FxRateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&exchangeData); err != nil {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", err))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", err))
 		return
 	}
 
 	if exchangeData.Result != "success" {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("%v", exchangeData.Result))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%v", exchangeData.Result))
 		return
 	}
 
 	toRate, exists := exchangeData.ConversionRates[toCurrency]
 	if !exists {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Unsupported %s", toCurrency))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Unsupported %s", toCurrency))
 		return
 	}
 
 	fromRate, exists := exchangeData.ConversionRates[fromCurrency]
 	if !exists {
-		c.SendMsg(src.GroupID, src.UserID, fmt.Sprintf("Unsupported %s", fromCurrency))
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Unsupported %s", fromCurrency))
 		return
 	}
 
@@ -102,5 +116,5 @@ func (cmd *ErCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int
 		fromCurrency, rate1to2, toCurrency,
 		toCurrency, rate2to1, fromCurrency)
 
-	c.SendMsg(src.GroupID, src.UserID, result)
+	b.SendGroupMsg(msg.GroupID, result)
 }

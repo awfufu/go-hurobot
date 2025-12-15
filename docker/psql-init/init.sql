@@ -7,14 +7,6 @@ CREATE TABLE users (
     PRIMARY KEY ("user_id")
 );
 
-CREATE TABLE suppliers (
-    "name"          TEXT NOT NULL,
-    "base_url"      TEXT NOT NULL,
-    "api_key"       TEXT,
-    "default_model" TEXT,
-    PRIMARY KEY ("name")
-);
-
 CREATE TABLE messages (
     "msg_id"   BIGINT NOT NULL,
     "user_id"  BIGINT NOT NULL,
@@ -37,8 +29,7 @@ CREATE TABLE group_llm_configs (
     "debug"       BOOLEAN NOT NULL DEFAULT FALSE,
     "supplier"    TEXT,
     "model"       TEXT,
-    PRIMARY KEY ("group_id"),
-    FOREIGN KEY ("supplier") REFERENCES suppliers(name)
+    PRIMARY KEY ("group_id")
 );
 
 CREATE INDEX idx_messages_covering ON messages("group_id", "is_cmd", "time" DESC, "user_id", "content", "msg_id");
@@ -50,6 +41,3 @@ CREATE TABLE group_rcon_configs (
     "enabled"  BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY ("group_id")
 );
-
-INSERT INTO suppliers ("name", "base_url", "api_key", "default_model") VALUES
-('siliconflow', 'https://api.siliconflow.cn/v1', '', 'deepseek-ai/DeepSeek-V3.1');

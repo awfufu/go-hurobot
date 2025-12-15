@@ -14,7 +14,7 @@ import (
 type yamlConfig struct {
 	// NapCat 配置
 	NapcatHttpServer  string `yaml:"napcat_http_server"`  // 正向 HTTP 地址
-	ReverseHttpServer string `yaml:"reverse_http_server"` // 反向 HTTP 监听端口
+	ReverseHttpListen string `yaml:"reverse_http_listen"` // 反向 HTTP 监听端口
 
 	// API Keys 配置
 	ApiKeys struct {
@@ -55,7 +55,15 @@ type yamlConfig struct {
 	} `yaml:"permissions"`
 
 	// 其他配置
-	ProxyURL string `yaml:"proxy_url,omitempty"`
+	ProxyURL  string                    `yaml:"proxy_url,omitempty"`
+	Suppliers map[string]SupplierConfig `yaml:"suppliers,omitempty"`
+}
+
+type SupplierConfig struct {
+	BaseURL      string `yaml:"base_url"`
+	APIKey       string `yaml:"api_key"`
+	DefaultModel string `yaml:"default_model"`
+	Proxy        string `yaml:"proxy,omitempty"`
 }
 
 // CmdConfig 命令配置结构
@@ -90,8 +98,8 @@ func LoadConfig(configPath string) error {
 	if Cfg.NapcatHttpServer == "" {
 		Cfg.NapcatHttpServer = "http://127.0.0.1:3000"
 	}
-	if Cfg.ReverseHttpServer == "" {
-		Cfg.ReverseHttpServer = "0.0.0.0:3001"
+	if Cfg.ReverseHttpListen == "" {
+		Cfg.ReverseHttpListen = "0.0.0.0:3001"
 	}
 
 	// 权限默认值

@@ -2,21 +2,35 @@ package cmds
 
 import (
 	"fmt"
-	"go-hurobot/qbot"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
 const shHelpMsg string = `Execute shell commands.
 Usage: /sh <command>
 Example: /sh ls -la`
 
-var workingDir string = "/tmp"
+const user = "mc"
+const masterUser = "awfufu"
+const home = "/home/" + user
+const masterHome = "/home/" + masterUser
+
+var workingDir string = home
+var masterWorkingDir string = masterHome
 
 func truncateString(s string) string {
 	s = encodeSpecialChars(s)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+
 	const (
 		maxLines    = 20
 		maxChars    = 1024
@@ -50,12 +64,12 @@ type ShCommand struct {
 func NewShCommand() *ShCommand {
 	return &ShCommand{
 		cmdBase: cmdBase{
-			Name:        "sh",
-			HelpMsg:     shHelpMsg,
-			Permission:  getCmdPermLevel("sh"),
-			AllowPrefix: false,
-			NeedRawMsg:  true,
-			MinArgs:     2,
+			Name:       "sh",
+			HelpMsg:    shHelpMsg,
+			Permission: getCmdPermLevel("sh"),
+
+			NeedRawMsg: true,
+			MinArgs:    2,
 		},
 	}
 }
@@ -64,29 +78,46 @@ func (cmd *ShCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *ShCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int) {
-	if len(args) <= 1 {
-		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+cmd.HelpMsg)
+func (cmd *ShCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+	// For NeedRawMsg, msg.Array[1] contains the raw arguments string.
+	// But let's verify if we need parsing for --reset
+	// The original code checked args[1] == "--reset".
+	// If raw message is used, msg.Array should still have split parts?
+	// Step 77: if cmdBase.NeedRawMsg { args = ... cmdName, raw ... }
+	// So Array[1] is the WHOLE raw string.
+	// So we need to check if the raw string STARTS with --reset or IS --reset.
+
+	if len(msg.Array) < 2 {
 		return
 	}
 
-	rawcmd := decodeSpecialChars(src.Raw)
+	rawArgs := ""
+	if txt := msg.Array[1].GetTextItem(); txt != nil {
+		rawArgs = txt.Content
+	}
 
-	if strings.HasPrefix(args[1], "cd") {
-		absPath, err := exec.Command("bash", "-c",
-			fmt.Sprintf("cd %s && %s && pwd", workingDir, rawcmd)).CombinedOutput()
-
-		if err != nil {
-			c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+err.Error())
-			return
+	isMaster := config.GetUserPermission(msg.UserID) == config.Master
+	if strings.TrimSpace(rawArgs) == "--reset" {
+		if isMaster {
+			masterWorkingDir = masterHome
+			b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "working dir reset to "+masterWorkingDir)
+		} else {
+			workingDir = home
+			b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "working dir reset to "+workingDir)
 		}
-
-		workingDir = strings.TrimSpace(string(absPath))
-		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+workingDir)
 		return
 	}
 
-	shellCmd := exec.Command("bash", "-c", fmt.Sprintf("cd %s && %s", workingDir, rawcmd))
+	rawcmd := decodeSpecialChars(rawArgs)
+
+	var shellCmd *exec.Cmd = nil
+	if isMaster {
+		fullCmd := fmt.Sprintf("cd %s && %s; echo '\n'; pwd", masterWorkingDir, rawcmd)
+		shellCmd = exec.Command("zsh", "-c", fullCmd)
+	} else {
+		fullCmd := fmt.Sprintf("cd %s && %s; echo '\n'; pwd", workingDir, rawcmd)
+		shellCmd = exec.Command("ssh", user+"@127.0.0.1", "zsh", "-c", fullCmd)
+	}
 
 	done := make(chan error, 1)
 	var output []byte
@@ -95,21 +126,47 @@ func (cmd *ShCommand) Exec(c *qbot.Client, args []string, src *srcMsg, begin int
 		var err error
 		output, err = shellCmd.CombinedOutput()
 		log.Printf("run command: %s, output: %s, error: %v",
-			strings.Join(args[1:], " "), string(output), err)
+			rawArgs, string(output), err)
 		done <- err
 	}()
 
 	select {
 	case err := <-done:
+		outputStr := string(output)
+
+		// 解析输出的最后一行来更新workingDir
+		lines := strings.Split(strings.TrimSpace(outputStr), "\n")
+		if len(lines) > 0 {
+			lastLine := strings.TrimSpace(lines[len(lines)-1])
+			if strings.HasPrefix(lastLine, "/") {
+				if _, statErr := os.Stat(lastLine); statErr == nil {
+					if isMaster {
+						masterWorkingDir = lastLine
+					} else {
+						workingDir = lastLine
+					}
+					if len(lines) > 1 {
+						outputStr = strings.Join(lines[:len(lines)-1], "\n")
+					} else {
+						outputStr = ""
+					}
+				}
+			}
+		}
+
 		if err == nil {
 			// success
-			c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+truncateString(string(output)))
+			if outputStr != "" {
+				b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, truncateString(outputStr))
+			} else {
+				b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "ok")
+			}
 		} else {
 			// failed
-			c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+fmt.Sprintf("%v\n%s", err, truncateString(string(output))))
+			b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, fmt.Sprintf("%v\n%s", err, truncateString(outputStr)))
 		}
 	case <-time.After(300 * time.Second):
 		shellCmd.Process.Kill()
-		c.SendMsg(src.GroupID, src.UserID, qbot.CQReply(src.MsgID)+fmt.Sprintf("Timeout: %q", rawcmd))
+		b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, fmt.Sprintf("Timeout: %q", rawcmd))
 	}
 }

@@ -6,44 +6,22 @@ import (
 
 	"github.com/google/shlex"
 
-	"go-hurobot/config"
-	"go-hurobot/qbot"
-)
-
-type srcMsg struct {
-	MsgID   uint64
-	UserID  uint64
-	GroupID uint64
-	Card    string
-	Role    string
-	Time    uint64
-	Raw     string
-}
-
-const (
-	atPrefix      string = "--at="
-	replyPrefix   string = "--reply="
-	facePrefix    string = "--face="
-	imagePrefix   string = "--image="
-	recordPrefix  string = "--record="
-	filePrefix    string = "--file="
-	forwardPrefix string = "--forward="
-	jsonPrefix    string = "--json="
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
 type command interface {
 	Self() *cmdBase
-	Exec(c *qbot.Client, args []string, src *srcMsg, begin int)
+	Exec(b *qbot.Bot, msg *qbot.Message)
 }
 
 type cmdBase struct {
-	Name        string            // Command name
-	HelpMsg     string            // Help message
-	Permission  config.Permission // Permission requirement
-	AllowPrefix bool              // Whether to allow prefixes (like @)
-	NeedRawMsg  bool              // Whether raw message is needed
-	MaxArgs     int               // Maximum number of arguments
-	MinArgs     int               // Minimum number of arguments
+	Name       string            // Command name
+	HelpMsg    string            // Help message
+	Permission config.Permission // Permission requirement
+	NeedRawMsg bool
+	MaxArgs    int // Maximum number of arguments
+	MinArgs    int // Minimum number of arguments
 }
 
 const commandPrefix = '/'
@@ -52,160 +30,185 @@ var cmdMap map[string]command
 
 func init() {
 	cmdMap = map[string]command{
-		"callme":       NewCallmeCommand(),
-		"config":       NewConfigCommand(),
 		"crypto":       NewCryptoCommand(),
 		"delete":       NewDeleteCommand(),
-		"dice":         NewDiceCommand(),
 		"draw":         NewDrawCommand(),
 		"echo":         NewEchoCommand(),
 		"essence":      NewEssenceCommand(),
 		"fx":           NewErCommand(),
 		"group":        NewGroupCommand(),
-		"llm":          NewLlmCommand(),
 		"mc":           NewMcCommand(),
-		"memberinfo":   NewMemberinfoCommand(),
 		"psql":         NewPsqlCommand(),
-		"py":           NewPyCommand(),
 		"rcon":         NewRconCommand(),
-		"rps":          NewRpsCommand(),
 		"sh":           NewShCommand(),
 		"specialtitle": NewSpecialtitleCommand(),
-		"testapi":      NewTestapiCommand(),
 		"which":        NewWhichCommand(),
 	}
 }
 
-func HandleCommand(c *qbot.Client, msg *qbot.Message) bool /* is command */ {
-	cmdName, raw, skip := parseCmd(msg)
-	if skip == -1 {
-		return false
-	}
+func HandleCommand(b *qbot.Bot, msg *qbot.Message) {
+	cmdName, argsItems, raw := parseCmd(msg)
 
 	if cmdName == "" {
-		return false
+		return
 	}
 
 	cmd, exists := cmdMap[cmdName]
 	if !exists {
-		return false
+		return
 	}
 
-	src := &srcMsg{
-		MsgID:   msg.MsgID,
-		UserID:  msg.UserID,
-		GroupID: msg.GroupID,
-		Card:    msg.Card,
-		Role:    msg.Role,
-		Time:    msg.Time,
-		Raw:     raw,
-	}
 	cmdBase := cmd.Self()
 
 	// check permission
-	if !checkCmdPermission(cmdBase.Name, src.UserID) {
-		c.SendMsg(src.GroupID, src.UserID, cmdBase.Name+": Permission denied")
-		return true
-	}
-
-	// check if allow prefix
-	if skip != 0 && !cmdBase.AllowPrefix {
-		return true
+	if !checkCmdPermission(cmdBase.Name, msg.UserID) {
+		b.SendGroupMsg(msg.GroupID, cmdBase.Name+": Permission denied")
+		return
 	}
 
 	// parse arguments
-	var args []string
+	var args []qbot.MsgItem
 	if cmdBase.NeedRawMsg {
-		args = []string{cmdName, raw}
+		args = []qbot.MsgItem{&qbot.TextItem{Content: cmdName}}
+		if len(raw) > 0 {
+			args = append(args, &qbot.TextItem{Content: raw})
+		}
 	} else {
-		args = splitArguments(msg)
+		// New logic: commands are strictly TextItem first.
+		// args construction starts with command name, then parsed args.
+
+		args = make([]qbot.MsgItem, 0, len(msg.Array)+len(argsItems))
+
+		// Add command name
+		args = append(args, &qbot.TextItem{Content: cmdName})
+
+		// Add parsed args
+		for _, item := range argsItems {
+			if t, ok := item.(*qbot.TextItem); ok {
+				parts, err := shlex.Split(t.Content)
+				if err != nil {
+					return
+				}
+				for _, part := range parts {
+					args = append(args, &qbot.TextItem{Content: part})
+				}
+			} else {
+				args = append(args, item)
+			}
+		}
 	}
 	if args == nil {
-		return false
+		return
 	}
-	argCount := len(args) - skip
+	// argCount logic simplified as there is no skip
+	argCount := len(args)
 	if (cmdBase.MinArgs > 0 && argCount < cmdBase.MinArgs) || (cmdBase.MaxArgs > 0 && argCount > cmdBase.MaxArgs) {
-		c.SendMsg(src.GroupID, src.UserID, cmdBase.HelpMsg)
-		return true
+		b.SendGroupMsg(msg.GroupID, cmdBase.HelpMsg)
+		return
 	}
 
 	// check if is help command
-	if isHelpRequest(args, skip) {
-		c.SendMsg(src.GroupID, src.UserID, cmdBase.HelpMsg)
-		return true
+	if isHelpRequest(args) {
+		b.SendGroupMsg(msg.GroupID, cmdBase.HelpMsg)
+		return
 	}
 
 	// execute command
-	cmd.Exec(c, args, src, skip)
-	return true
+	newMsg := *msg
+	newMsg.Array = args
+	cmd.Exec(b, &newMsg)
 }
 
 // calculate the number of prefixes to skip
-func parseCmd(msg *qbot.Message) (string, string, int) {
+// calculate the number of prefixes to skip
+func parseCmd(msg *qbot.Message) (string, []qbot.MsgItem, string) {
 	if len(msg.Array) == 0 {
-		return "", "", -1
+		return "", nil, ""
 	}
 
-	for skip := 0; skip < len(msg.Array); skip++ {
-		switch msg.Array[skip].Type {
-		case qbot.Reply, qbot.At:
-			continue
-		case qbot.Text:
-			content := msg.Array[skip].Content
+	// Strictly check if the first item is TextType
+	if msg.Array[0].Type() != qbot.TextType {
+		return "", nil, ""
+	}
 
-			// Skip leading spaces
-			offset := 0
-			for offset < len(content) && content[offset] == ' ' {
-				offset++
-			}
+	item, ok := msg.Array[0].(*qbot.TextItem)
+	if !ok {
+		return "", nil, ""
+	}
+	content := item.Content
 
-			// Check if starts with command prefix
-			if offset >= len(content) || content[offset] != commandPrefix {
-				return "", "", -1
-			}
-			offset++ // skip the '/' character
+	// Skip leading spaces
+	offset := 0
+	for offset < len(content) && content[offset] == ' ' {
+		offset++
+	}
 
-			// Find the skip-th ']' character in msg.Raw and extract content after it
-			rawStart := 0
-			for i := 0; i < skip; i++ {
-				idx := strings.Index(msg.Raw[rawStart:], "]")
-				if idx == -1 {
-					break
-				}
-				rawStart += idx + 1
-			}
+	// Check if starts with command prefix
+	if offset >= len(content) || content[offset] != commandPrefix {
+		return "", nil, ""
+	}
+	offset++ // skip the '/' character
 
-			// Skip to the command prefix in raw
-			for rawStart < len(msg.Raw) && msg.Raw[rawStart] != commandPrefix {
-				rawStart++
-			}
-			if rawStart >= len(msg.Raw) {
-				return "", "", -1
-			}
-			rawStart++ // skip the '/' character
+	// In the raw message, since we are at the first item, we can skip leading spaces and finding '/' directly?
+	// The original logic tried to find ']' for skips, but here skip is 0.
+	// We need to find where the command starts in msg.Raw.
+	// Assuming msg.Raw corresponds to the text content properly.
+	// Simple approach: look for commandPrefix in msg.Raw, similar to before but without loop.
 
-			raw := msg.Raw[rawStart:]
+	rawStart := 0
+	// Skip to the command prefix in raw
+	for rawStart < len(msg.Raw) && msg.Raw[rawStart] != commandPrefix {
+		rawStart++
+	}
+	if rawStart >= len(msg.Raw) {
+		return "", nil, ""
+	}
+	rawStart++ // skip the '/' character
 
-			// Find command name (up to first space)
-			cmdIndex := strings.Index(raw, " ")
-			if cmdIndex == -1 {
-				return raw, "", skip
-			}
-			return raw[:cmdIndex], raw[cmdIndex+1:], skip
-		default:
-			return "", "", -1
+	raw := msg.Raw[rawStart:]
+
+	// Find command name (up to first space)
+	cmdIndex := strings.Index(raw, " ")
+	var cmdName, rawArgs string
+	if cmdIndex == -1 {
+		cmdName = raw
+		rawArgs = ""
+	} else {
+		cmdName = raw[:cmdIndex]
+		rawArgs = raw[cmdIndex+1:]
+	}
+
+	// Construct args
+	var args []qbot.MsgItem
+
+	// Extract args from the current text item
+	rest := content[offset:]
+	idx := strings.Index(rest, " ")
+	if idx != -1 {
+		argContent := rest[idx+1:]
+		if len(argContent) > 0 {
+			args = append(args, &qbot.TextItem{Content: argContent})
 		}
 	}
-	return "", "", -1
+
+	// Append remaining items
+	if len(msg.Array) > 1 {
+		args = append(args, msg.Array[1:]...)
+	}
+
+	return cmdName, args, rawArgs
 }
 
-// isHelpRequest checks if it is a help request
-func isHelpRequest(args []string, skip int) bool {
-	if len(args) <= skip {
+// checks if it is a help request
+func isHelpRequest(args []qbot.MsgItem) bool {
+	if len(args) <= 0 {
 		return false
 	}
-	firstArg := args[skip]
-	return firstArg == "-h" || firstArg == "-?" || firstArg == "--help"
+	firstArg := args[0]
+	if t, ok := firstArg.(*qbot.TextItem); ok {
+		return t.Content == "-h" || t.Content == "-?" || t.Content == "--help"
+	}
+	return false
 }
 
 func getCmdPermLevel(cmdName string) config.Permission {
@@ -216,8 +219,6 @@ func getCmdPermLevel(cmdName string) config.Permission {
 	return cmdCfg.GetPermissionLevel()
 }
 
-// checkCmdPermission checks if user has permission to execute specified command
-// considering permission, allow_users, reject_users in command configuration
 func checkCmdPermission(cmdName string, userID uint64) bool {
 	cmdCfg := config.Cfg.GetCmdConfig(cmdName)
 
@@ -251,54 +252,6 @@ func checkCmdPermission(cmdName string, userID uint64) bool {
 	return userPerm >= requiredPerm
 }
 
-func splitArguments(msg *qbot.Message) []string {
-	result := make([]string, 0, 20)
-
-	firstText := true
-	for _, item := range msg.Array {
-		if item.Type == qbot.Text {
-			content := item.Content
-			if firstText {
-				content = item.Content[1:]
-				firstText = false
-			}
-			texts, err := shlex.Split(content)
-			if err != nil {
-				return nil
-			}
-			result = append(result, texts...)
-		} else {
-			result = append(result, msgItemToArg(item))
-		}
-	}
-	return result
-}
-
-func msgItemToArg(item qbot.MsgItem) string {
-	var prefix string
-	switch item.Type {
-	case qbot.At:
-		prefix = atPrefix
-	case qbot.Face:
-		prefix = facePrefix
-	case qbot.Image:
-		prefix = imagePrefix
-	case qbot.Record:
-		prefix = recordPrefix
-	case qbot.Reply:
-		prefix = replyPrefix
-	case qbot.File:
-		prefix = filePrefix
-	case qbot.Forward:
-		prefix = forwardPrefix
-	case qbot.Json:
-		prefix = jsonPrefix
-	default:
-		return item.Content
-	}
-	return prefix + item.Content
-}
-
 func decodeSpecialChars(raw string) string {
 	replacer := strings.NewReplacer(
 		"&#91;", "[",
@@ -308,6 +261,11 @@ func decodeSpecialChars(raw string) string {
 		"&gt;", ">",
 	)
 	return replacer.Replace(raw)
+}
+
+func isNumeric(s string) bool {
+	_, err := strconv.ParseUint(s, 10, 64)
+	return err == nil
 }
 
 func encodeSpecialChars(raw string) string {

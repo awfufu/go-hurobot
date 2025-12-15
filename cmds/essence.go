@@ -1,11 +1,10 @@
 package cmds
 
 import (
-	"go-hurobot/config"
-	"go-hurobot/qbot"
 	"slices"
-	"strconv"
-	"strings"
+
+	"github.com/awfufu/go-hurobot/config"
+	"github.com/awfufu/qbot"
 )
 
 const essenceHelpMsg string = `Manage essence messages.
@@ -18,11 +17,11 @@ type EssenceCommand struct {
 func NewEssenceCommand() *EssenceCommand {
 	return &EssenceCommand{
 		cmdBase: cmdBase{
-			Name:        "essence",
-			HelpMsg:     essenceHelpMsg,
-			Permission:  getCmdPermLevel("essence"),
-			AllowPrefix: false,
-			NeedRawMsg:  false,
+			Name:       "essence",
+			HelpMsg:    essenceHelpMsg,
+			Permission: getCmdPermLevel("essence"),
+
+			NeedRawMsg: false,
 		},
 	}
 }
@@ -31,39 +30,30 @@ func (cmd *EssenceCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *EssenceCommand) Exec(c *qbot.Client, args []string, src *srcMsg, _ int) {
-	if !slices.Contains(config.Cfg.Permissions.BotOwnerGroupIDs, src.GroupID) {
+func (cmd *EssenceCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+	if !slices.Contains(config.Cfg.Permissions.BotOwnerGroupIDs, msg.GroupID) {
 		return
 	}
 
-	// 查找 --reply= 参数
-	var msgID uint64
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--reply=") {
-			if id, err := strconv.ParseUint(strings.TrimPrefix(arg, "--reply="), 10, 64); err == nil {
-				msgID = id
-				break
+	if msg.ReplyID == 0 {
+		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		return
+	}
+
+	if len(msg.Array) >= 2 {
+		if txt := msg.Array[1].GetTextItem(); txt != nil {
+			switch txt.Content {
+			case "rm":
+				b.DeleteGroupEssence(msg.ReplyID)
+			case "add":
+				b.SetGroupEssence(msg.ReplyID)
+			default:
+				b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
 			}
+		} else {
+			b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
 		}
-	}
-
-	if msgID == 0 {
-		c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
-		return
-	}
-
-	if len(args) == 2 {
-		switch args[1] {
-		case "rm":
-			c.DeleteGroupEssence(msgID)
-		case "add":
-			c.SetGroupEssence(msgID)
-		default:
-			c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
-		}
-	} else if len(args) == 1 {
-		c.SetGroupEssence(msgID)
 	} else {
-		c.SendMsg(src.GroupID, src.UserID, cmd.HelpMsg)
+		b.SetGroupEssence(msg.ReplyID)
 	}
 }
