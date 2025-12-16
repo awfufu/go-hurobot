@@ -74,7 +74,6 @@ func InitCommandPermissions() {
 		newPerm := &db.DbPermissions{
 			Command:          name,
 			UserAllow:        userAllow,
-			GroupEnable:      0, // default disable
 			SpecialUsers:     "",
 			IsWhitelistUsers: 0, // blacklist mode by default (empty blacklist = allow nobody? No, blacklist means if in list then block. If list empty, all allowed? Wait. Logic check needed.)
 			// Wait, if IsWhitelist, only those in list are allowed.
@@ -274,8 +273,7 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 	// 2. Load Permissions from DB
 	perm := db.GetCommandPermission(cmdName)
 
-	var userAllow int = 2   // default master
-	var groupEnable int = 0 // default disable
+	var userAllow int = 2 // default master
 	var specialUsers []uint64
 	var isWhitelistUsers int = 0 // default blacklist
 	var specialGroups []uint64
@@ -283,7 +281,6 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 
 	if perm != nil {
 		userAllow = perm.UserAllow
-		groupEnable = perm.GroupEnable
 		specialUsers = perm.ParseSpecialUsers()
 		isWhitelistUsers = perm.IsWhitelistUsers
 		specialGroups = perm.ParseSpecialGroups()
@@ -330,32 +327,25 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 			return false
 		}
 	}
-
-	// 6. Group Enable Check
-	// 0: disable, 1: enable
-	if groupEnable == 1 {
-		return true
-	}
-	// disable
-	return false
+	return true
 }
 
 func GetUserPermission(userID uint64) config.Permission {
 	if userID == config.Cfg.Permissions.MasterID {
 		return config.Master
 	}
-	if IsAdmin(userID) {
-		return config.Admin
-	}
-	return config.Guest
-}
 
-func IsAdmin(userID uint64) bool {
-	if userID == config.Cfg.Permissions.MasterID {
-		return true
+	perm := db.GetUserPerm(userID)
+	switch perm {
+	case 0:
+		return config.Guest
+	case 1:
+		return config.Admin
+	case 2:
+		return config.Master // Should not theoretically happen via DB if MasterID is separate, but allows granting Master via DB
+	default:
+		return config.Guest
 	}
-	admins := db.GetGlobalIDs("admin_ids")
-	return slices.Contains(admins, userID)
 }
 
 func decodeSpecialChars(raw string) string {

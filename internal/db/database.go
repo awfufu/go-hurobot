@@ -22,10 +22,28 @@ var PsqlConnected bool = false
 type dbUsers struct {
 	UserID uint64 `gorm:"primaryKey;column:user_id"`
 	Name   string `gorm:"not null;column:name"`
+	Perm   int    `gorm:"not null;column:perm;default:0"` // 0:guest, 1:admin, 2:master
 }
 
 func (dbUsers) TableName() string {
 	return "users"
+}
+
+func GetUserPerm(userID uint64) int {
+	var user dbUsers
+	if err := PsqlDB.Where("user_id = ?", userID).First(&user).Error; err != nil {
+		return 0 // default guest
+	}
+	return user.Perm
+}
+
+func UpdateUserPerm(userID uint64, perm int) error {
+	// Updates perm for existing user, or creates user if not exists?
+	// If user doesn't exist, we probably shouldn't create them just for perm unless we have a name.
+	// But usually this is called for existing users.
+	// Safe way: Update using Model with where clause.
+	result := PsqlDB.Model(&dbUsers{}).Where("user_id = ?", userID).Update("perm", perm)
+	return result.Error
 }
 
 type dbMessages struct {
@@ -42,12 +60,11 @@ func (dbMessages) TableName() string {
 
 type DbPermissions struct {
 	Command           string `gorm:"primaryKey;column:command"`
-	UserAllow         int    `gorm:"not null;column:user_allow;default:2"`   // 0:guest, 1:admin, 2:master
-	GroupEnable       int    `gorm:"not null;column:group_enable;default:0"` // 0:disable, 1:enable
-	SpecialUsers      string `gorm:"column:special_users"`                   // CSV string
-	IsWhitelistUsers  int    `gorm:"column:is_users_whitelist;default:0"`    // 0:blacklist, 1:whitelist
-	SpecialGroups     string `gorm:"column:special_groups"`                  // CSV string. Note: db col "special_group"
-	IsWhitelistGroups int    `gorm:"column:is_groups_whitelist;default:0"`   // 0:blacklist, 1:whitelist
+	UserAllow         int    `gorm:"not null;column:user_allow;default:2"` // 0:guest, 1:admin, 2:master
+	SpecialUsers      string `gorm:"column:special_users"`                 // CSV string
+	IsWhitelistUsers  int    `gorm:"column:is_users_whitelist;default:0"`  // 0:blacklist, 1:whitelist
+	SpecialGroups     string `gorm:"column:special_groups"`                // CSV string. Note: db col "special_group"
+	IsWhitelistGroups int    `gorm:"column:is_groups_whitelist;default:0"` // 0:blacklist, 1:whitelist
 }
 
 func (DbPermissions) TableName() string {

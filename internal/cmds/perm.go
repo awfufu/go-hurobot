@@ -17,11 +17,13 @@ Subcommands:
   set <cmd> <key> <value>
     Keys: user_allow (0-2/guest/admin/master), group_enable (0-1), whitelist_user (0-1), whitelist_group (0-1)
   special <cmd> <user|group> <add|rm|list> [targets...]
+  user <target> <level>
+    Levels: 0/guest, 1/admin, 2/master
 Examples:
   /perm set draw user_allow 0
   /perm set draw group_enable 1
   /perm special draw user add @user
-  /perm special draw group list`
+  /perm user @user admin`
 
 type PermCommand struct {
 	cmdBase
@@ -64,6 +66,8 @@ func (cmd *PermCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 		cmd.handleSet(b, msg)
 	case "special":
 		cmd.handleSpecial(b, msg)
+	case "user":
+		cmd.handleUserRole(b, msg)
 	default:
 		b.SendGroupMsg(msg.GroupID, "Unknown subcommand: "+subCmd)
 	}
@@ -94,7 +98,6 @@ func (cmd *PermCommand) handleSet(b *qbot.Bot, msg *qbot.Message) {
 		perm = &db.DbPermissions{
 			Command:           cmdName,
 			UserAllow:         2,
-			GroupEnable:       0,
 			SpecialUsers:      "",
 			IsWhitelistUsers:  0,
 			SpecialGroups:     "",
@@ -117,12 +120,6 @@ func (cmd *PermCommand) handleSet(b *qbot.Bot, msg *qbot.Message) {
 			return
 		}
 		perm.UserAllow = valInt
-	case "group_enable":
-		if value == "1" || value == "enable" || value == "true" {
-			perm.GroupEnable = 1
-		} else {
-			perm.GroupEnable = 0
-		}
 	case "whitelist_user":
 		if value == "1" || value == "enable" || value == "true" {
 			perm.IsWhitelistUsers = 1
@@ -159,14 +156,14 @@ func (cmd *PermCommand) handleSpecial(b *qbot.Bot, msg *qbot.Message) {
 
 	// special <cmd> <user|group> <add|rm|list> [targets...]
 	// 0       1     2            3             4
-	if len(msg.Array) < 4 {
+	if len(msg.Array) < 5 {
 		b.SendGroupMsg(msg.GroupID, "Usage: perm special <cmd> <user|group> <add|rm|list> [targets...]")
 		return
 	}
 
-	cmdName := getText(1)
-	targetType := getText(2)
-	action := getText(3)
+	cmdName := getText(2)
+	targetType := getText(3)
+	action := getText(4)
 
 	if targetType != "user" && targetType != "group" {
 		b.SendGroupMsg(msg.GroupID, "Invalid target type. Must be user or group.")
@@ -181,7 +178,6 @@ func (cmd *PermCommand) handleSpecial(b *qbot.Bot, msg *qbot.Message) {
 		perm = &db.DbPermissions{
 			Command:           cmdName,
 			UserAllow:         2,
-			GroupEnable:       0,
 			SpecialUsers:      "",
 			IsWhitelistUsers:  0,
 			SpecialGroups:     "",
@@ -290,4 +286,56 @@ func extractTargets(args []qbot.MsgItem, targetType string) []uint64 {
 		}
 	}
 	return targets
+}
+
+func (cmd *PermCommand) handleUserRole(b *qbot.Bot, msg *qbot.Message) {
+	getText := func(i int) string {
+		if i < len(msg.Array) {
+			if txt := msg.Array[i].GetTextItem(); txt != nil {
+				return txt.Content
+			}
+		}
+		return ""
+	}
+
+	// user <target> <level>
+	if len(msg.Array) < 4 {
+		b.SendGroupMsg(msg.GroupID, "Usage: perm user <target> <level>\nLevels: 0/guest, 1/admin, 2/master")
+		return
+	}
+
+	// Target should be an At item or Int ID
+	var targetID uint64
+	if at := msg.Array[2].GetAtItem(); at != nil {
+		targetID = at.TargetID
+	} else if txt := msg.Array[2].GetTextItem(); txt != nil {
+		if id, err := strconv.ParseUint(txt.Content, 10, 64); err == nil {
+			targetID = id
+		}
+	}
+
+	if targetID == 0 {
+		b.SendGroupMsg(msg.GroupID, "Invalid user target.")
+		return
+	}
+
+	levelStr := getText(3)
+	var level int
+	switch levelStr {
+	case "0", "guest":
+		level = 0
+	case "1", "admin":
+		level = 1
+	case "2", "master":
+		level = 2
+	default:
+		b.SendGroupMsg(msg.GroupID, "Invalid level. Usage: 0/guest, 1/admin, 2/master")
+		return
+	}
+
+	if err := db.UpdateUserPerm(targetID, level); err != nil {
+		b.SendGroupMsg(msg.GroupID, "Failed to update user role: "+err.Error())
+	} else {
+		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Updated user %d role to %d", targetID, level))
+	}
 }
