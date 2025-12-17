@@ -111,32 +111,6 @@ func JoinIDList(ids []uint64) string {
 	return strings.Join(strs, ",")
 }
 
-type GlobalConfig struct {
-	Key   string `gorm:"primaryKey;column:key"`
-	Value string `gorm:"column:value"` // CSV string
-}
-
-func (GlobalConfig) TableName() string {
-	return "global_configs"
-}
-
-func GetGlobalIDs(key string) []uint64 {
-	var cfg GlobalConfig
-	if err := PsqlDB.Where("key = ?", key).First(&cfg).Error; err != nil {
-		return nil
-	}
-	return ParseIDList(cfg.Value)
-}
-
-func SaveGlobalIDs(key string, ids []uint64) error {
-	val := JoinIDList(ids)
-	cfg := GlobalConfig{
-		Key:   key,
-		Value: val,
-	}
-	return PsqlDB.Save(&cfg).Error
-}
-
 func InitDB() {
 	var err error
 	// Ensure directory exists
@@ -149,7 +123,7 @@ func InitDB() {
 		log.Fatalln(err)
 	}
 	PsqlConnected = true
-	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &DbPermissions{}, &GlobalConfig{})
+	PsqlDB.AutoMigrate(&dbUsers{}, &dbMessages{}, &DbPermissions{})
 }
 
 func SaveDatabase(msg *qbot.Message) error {

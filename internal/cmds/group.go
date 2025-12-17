@@ -2,12 +2,10 @@ package cmds
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/awfufu/go-hurobot/internal/config"
-	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 
@@ -39,10 +37,6 @@ func (cmd *GroupCommand) Self() *cmdBase {
 }
 
 func (cmd *GroupCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
-	if !slices.Contains(db.GetGlobalIDs("bot_owner_group_ids"), msg.GroupID) {
-		return
-	}
-
 	getText := func(i int) string {
 		if i < len(msg.Array) {
 			if txt := msg.Array[i].GetTextItem(); txt != nil {

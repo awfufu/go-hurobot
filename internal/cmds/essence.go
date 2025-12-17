@@ -1,9 +1,6 @@
 package cmds
 
 import (
-	"slices"
-
-	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 
@@ -31,10 +28,6 @@ func (cmd *EssenceCommand) Self() *cmdBase {
 }
 
 func (cmd *EssenceCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
-	if !slices.Contains(db.GetGlobalIDs("bot_owner_group_ids"), msg.GroupID) {
-		return
-	}
-
 	if msg.ReplyID == 0 {
 		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
 		return

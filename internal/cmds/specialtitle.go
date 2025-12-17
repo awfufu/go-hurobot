@@ -1,11 +1,9 @@
 package cmds
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
 )
 
@@ -36,10 +34,6 @@ func (cmd *SpecialtitleCommand) Self() *cmdBase {
 }
 
 func (cmd *SpecialtitleCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
-	if !slices.Contains(db.GetGlobalIDs("bot_owner_group_ids"), msg.GroupID) {
-		return
-	}
-
 	var targetUserID uint64
 	var title string
 
