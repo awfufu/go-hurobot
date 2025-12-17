@@ -36,11 +36,11 @@ func (cmd *GroupCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *GroupCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *GroupCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				return txt.Content
+			if msg.Array[i].Type() == qbot.TextType {
+				return msg.Array[i].Text()
 			}
 		}
 		return ""
@@ -56,8 +56,8 @@ func (cmd *GroupCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	case "rename":
 		var parts []string
 		for i := 2; i < len(msg.Array); i++ {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				parts = append(parts, txt.Content)
+			if msg.Array[i].Type() == qbot.TextType {
+				parts = append(parts, msg.Array[i].Text())
 			}
 		}
 		newName := decodeSpecialChars(strings.Join(parts, " "))
@@ -79,13 +79,9 @@ func (cmd *GroupCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 			return
 		}
 		// Extract target user from the 3rd argument (index 2)
-		var targetUserID uint64
-		if at := msg.Array[2].GetAtItem(); at != nil {
-			targetUserID = at.TargetID
-		} else if txt := msg.Array[2].GetTextItem(); txt != nil {
-			if strings.HasPrefix(txt.Content, "--at=") {
-				targetUserID = str2uin64(strings.TrimPrefix(txt.Content, "--at="))
-			}
+		var targetUserID qbot.UserID
+		if msg.Array[2].Type() == qbot.AtType {
+			targetUserID = msg.Array[2].At()
 		}
 
 		if targetUserID != 0 {
@@ -113,12 +109,12 @@ func (cmd *GroupCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	}
 }
 
-func setGroupAdmin(b *qbot.Bot, msg *qbot.Message, isOp bool) {
+func setGroupAdmin(b *qbot.Sender, msg *qbot.Message, isOp bool) {
 	// args start from index 2
 	targetUserIDs := extractTargetUsersFromMsg(msg.Array, 2, msg.UserID)
 
-	validUserIDs := make([]uint64, 0, len(targetUserIDs))
-	userIDSet := make(map[uint64]bool)
+	validUserIDs := make([]qbot.UserID, 0, len(targetUserIDs))
+	userIDSet := make(map[qbot.UserID]bool)
 
 	action := "op"
 	if !isOp {
@@ -127,7 +123,7 @@ func setGroupAdmin(b *qbot.Bot, msg *qbot.Message, isOp bool) {
 
 	for _, userID := range targetUserIDs {
 		if userID == config.Cfg.Permissions.BotID {
-			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Cannot %s bot", action))
+			b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Cannot %s bot self", action))
 			continue
 		}
 		if !userIDSet[userID] {
@@ -152,25 +148,20 @@ func setGroupAdmin(b *qbot.Bot, msg *qbot.Message, isOp bool) {
 	} else {
 		userIDStrings := make([]string, len(validUserIDs))
 		for i, id := range validUserIDs {
-			userIDStrings[i] = strconv.FormatUint(id, 10)
+			userIDStrings[i] = fmt.Sprintf("%d", id)
 		}
 		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("%s: %s", action, strings.Join(userIDStrings, ", ")))
 	}
 }
 
-func extractTargetUsersFromMsg(items []qbot.MsgItem, startIndex int, defaultUserID uint64) []uint64 {
-	var targetUserIDs []uint64
+func extractTargetUsersFromMsg(items []qbot.MsgItem, startIndex int, defaultUserID qbot.UserID) []qbot.UserID {
+	var targetUserIDs []qbot.UserID
 	hasAtUsers := false
 
 	for i := startIndex; i < len(items); i++ {
-		if at := items[i].GetAtItem(); at != nil {
+		if items[i].Type() == qbot.AtType {
 			hasAtUsers = true
-			targetUserIDs = append(targetUserIDs, at.TargetID)
-		} else if txt := items[i].GetTextItem(); txt != nil {
-			if strings.HasPrefix(txt.Content, "--at=") {
-				hasAtUsers = true
-				targetUserIDs = append(targetUserIDs, str2uin64(strings.TrimPrefix(txt.Content, "--at=")))
-			}
+			targetUserIDs = append(targetUserIDs, items[i].At())
 		}
 	}
 

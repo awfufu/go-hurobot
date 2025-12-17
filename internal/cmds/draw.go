@@ -57,7 +57,7 @@ func (cmd *DrawCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *DrawCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *DrawCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	if config.Cfg.ApiKeys.DrawApiKey == "" {
 		b.SendGroupMsg(msg.GroupID, "No API key")
 		return
@@ -67,8 +67,8 @@ func (cmd *DrawCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	// Parse following args
 	var args []string
 	for i := 1; i < len(msg.Array); i++ {
-		if txt := msg.Array[i].GetTextItem(); txt != nil {
-			args = append(args, txt.Content)
+		if msg.Array[i].Type() == qbot.TextType {
+			args = append(args, msg.Array[i].Text())
 		}
 	}
 

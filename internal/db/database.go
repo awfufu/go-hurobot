@@ -129,7 +129,7 @@ func InitDB() {
 func SaveDatabase(msg *qbot.Message) error {
 	return PsqlDB.Transaction(func(tx *gorm.DB) error {
 		user := dbUsers{
-			UserID: msg.UserID,
+			UserID: uint64(msg.UserID),
 			Name:   msg.Name,
 		}
 
@@ -145,8 +145,8 @@ func SaveDatabase(msg *qbot.Message) error {
 		}
 		newMessage := dbMessages{
 			MsgID:   uint64(msg.MsgID),
-			UserID:  msg.UserID,
-			GroupID: msg.GroupID,
+			UserID:  uint64(msg.UserID),
+			GroupID: uint64(msg.GroupID),
 			Raw:     msg.Raw,
 			Time:    time.Unix(int64(msg.Time), 0),
 		}

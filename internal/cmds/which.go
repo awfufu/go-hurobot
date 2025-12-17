@@ -48,12 +48,12 @@ func (cmd *WhichCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *WhichCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *WhichCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	// Check for non-text type parameters
 	for i := 1; i < len(msg.Array); i++ {
 		str := ""
-		if txt := msg.Array[i].GetTextItem(); txt != nil {
-			str = txt.Content
+		if msg.Array[i].Type() == qbot.TextType {
+			str = msg.Array[i].Text()
 		}
 		if strings.HasPrefix(str, "--") {
 			b.SendGroupMsg(msg.GroupID, "Only plain text is allowed")
@@ -63,8 +63,8 @@ func (cmd *WhichCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 
 	var parts []string
 	for i := 1; i < len(msg.Array); i++ {
-		if txt := msg.Array[i].GetTextItem(); txt != nil {
-			parts = append(parts, txt.Content)
+		if msg.Array[i].Type() == qbot.TextType {
+			parts = append(parts, msg.Array[i].Text())
 		}
 	}
 	text := strings.Join(parts, " ")

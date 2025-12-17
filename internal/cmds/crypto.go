@@ -97,20 +97,20 @@ func (cmd *CryptoCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *CryptoCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *CryptoCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	if len(msg.Array) == 2 {
-		if txt := msg.Array[1].GetTextItem(); txt != nil {
-			coin := strings.ToUpper(txt.Content)
+		if msg.Array[1].Type() == qbot.TextType {
+			coin := strings.ToUpper(msg.Array[1].Text())
 			handleSingleCrypto(b, msg, coin)
 		}
 	} else if len(msg.Array) == 3 {
 		coin := ""
 		currency := ""
-		if txt := msg.Array[1].GetTextItem(); txt != nil {
-			coin = strings.ToUpper(txt.Content)
+		if msg.Array[1].Type() == qbot.TextType {
+			coin = strings.ToUpper(msg.Array[1].Text())
 		}
-		if txt := msg.Array[2].GetTextItem(); txt != nil {
-			currency = strings.ToUpper(txt.Content)
+		if msg.Array[2].Type() == qbot.TextType {
+			currency = strings.ToUpper(msg.Array[2].Text())
 		}
 		if coin != "" && currency != "" {
 			handleCryptoCurrencyPair(b, msg, coin, currency)
@@ -120,7 +120,7 @@ func (cmd *CryptoCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	}
 }
 
-func handleSingleCrypto(b *qbot.Bot, msg *qbot.Message, coin string) {
+func handleSingleCrypto(b *qbot.Sender, msg *qbot.Message, coin string) {
 	log.Printf("Query single cryptocurrency: %s", coin)
 	price, err := getCryptoPrice(coin, "USDT")
 	if err != nil {
@@ -131,7 +131,7 @@ func handleSingleCrypto(b *qbot.Bot, msg *qbot.Message, coin string) {
 	b.SendGroupMsg(msg.GroupID, fmt.Sprintf("1 %s = %s USDT", coin, price))
 }
 
-func handleCryptoCurrencyPair(b *qbot.Bot, msg *qbot.Message, fromCoin string, toCurrency string) {
+func handleCryptoCurrencyPair(b *qbot.Sender, msg *qbot.Message, fromCoin string, toCurrency string) {
 	log.Printf("Query cryptocurrency pair: %s -> %s", fromCoin, toCurrency)
 
 	usdPrice, err := getCryptoPrice(fromCoin, "USD")

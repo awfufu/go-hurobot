@@ -45,7 +45,7 @@ func (cmd *PermCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *PermCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *PermCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	if len(msg.Array) < 2 {
 		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
 		return
@@ -53,8 +53,8 @@ func (cmd *PermCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 
 	getText := func(i int) string {
 		if i < len(msg.Array) {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				return txt.Content
+			if msg.Array[i].Type() == qbot.TextType {
+				return msg.Array[i].Text()
 			}
 		}
 		return ""
@@ -73,11 +73,11 @@ func (cmd *PermCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	}
 }
 
-func (cmd *PermCommand) handleSet(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *PermCommand) handleSet(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				return txt.Content
+			if msg.Array[i].Type() == qbot.TextType {
+				return msg.Array[i].Text()
 			}
 		}
 		return ""
@@ -144,11 +144,11 @@ func (cmd *PermCommand) handleSet(b *qbot.Bot, msg *qbot.Message) {
 	}
 }
 
-func (cmd *PermCommand) handleSpecial(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *PermCommand) handleSpecial(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				return txt.Content
+			if msg.Array[i].Type() == qbot.TextType {
+				return msg.Array[i].Text()
 			}
 		}
 		return ""
@@ -202,8 +202,8 @@ func (cmd *PermCommand) handleSpecial(b *qbot.Bot, msg *qbot.Message) {
 		}
 		count := 0
 		for _, t := range targets {
-			if !slices.Contains(currentList, t) {
-				currentList = append(currentList, t)
+			if !slices.Contains(currentList, uint64(t)) {
+				currentList = append(currentList, uint64(t))
 				count++
 			}
 		}
@@ -217,7 +217,7 @@ func (cmd *PermCommand) handleSpecial(b *qbot.Bot, msg *qbot.Message) {
 		}
 		count := 0
 		for _, t := range targets {
-			idx := slices.Index(currentList, t)
+			idx := slices.Index(currentList, uint64(t))
 			if idx != -1 {
 				currentList = append(currentList[:idx], currentList[idx+1:]...)
 				count++
@@ -262,11 +262,11 @@ func extractTargets(args []qbot.MsgItem, targetType string) []uint64 {
 	var targets []uint64
 	for _, arg := range args {
 		if targetType == "user" {
-			if at := arg.GetAtItem(); at != nil {
-				targets = append(targets, at.TargetID)
-			} else if txt := arg.GetTextItem(); txt != nil {
+			if arg.Type() == qbot.AtType {
+				targets = append(targets, uint64(arg.At()))
+			} else if arg.Type() == qbot.TextType {
 				// Try to parse raw ID from text if provided as argument
-				parts := strings.Fields(txt.Content)
+				parts := strings.Fields(arg.Text())
 				for _, part := range parts {
 					if id, err := strconv.ParseUint(part, 10, 64); err == nil {
 						targets = append(targets, id)
@@ -275,8 +275,8 @@ func extractTargets(args []qbot.MsgItem, targetType string) []uint64 {
 			}
 		} else {
 			// Groups are usually just numbers in text
-			if txt := arg.GetTextItem(); txt != nil {
-				parts := strings.Fields(txt.Content)
+			if arg.Type() == qbot.TextType {
+				parts := strings.Fields(arg.Text())
 				for _, part := range parts {
 					if id, err := strconv.ParseUint(part, 10, 64); err == nil {
 						targets = append(targets, id)
@@ -288,11 +288,11 @@ func extractTargets(args []qbot.MsgItem, targetType string) []uint64 {
 	return targets
 }
 
-func (cmd *PermCommand) handleUserRole(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *PermCommand) handleUserRole(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				return txt.Content
+			if msg.Array[i].Type() == qbot.TextType {
+				return msg.Array[i].Text()
 			}
 		}
 		return ""
@@ -305,16 +305,16 @@ func (cmd *PermCommand) handleUserRole(b *qbot.Bot, msg *qbot.Message) {
 	}
 
 	// Target should be an At item or Int ID
-	var targetID uint64
-	if at := msg.Array[2].GetAtItem(); at != nil {
-		targetID = at.TargetID
-	} else if txt := msg.Array[2].GetTextItem(); txt != nil {
-		if id, err := strconv.ParseUint(txt.Content, 10, 64); err == nil {
-			targetID = id
+	targetID := qbot.InvalidUser
+	if msg.Array[2].Type() == qbot.AtType {
+		targetID = msg.Array[2].At()
+	} else if msg.Array[2].Type() == qbot.TextType {
+		if id, err := strconv.ParseUint(msg.Array[2].Text(), 10, 64); err == nil {
+			targetID = qbot.UserID(id)
 		}
 	}
 
-	if targetID == 0 {
+	if targetID == qbot.InvalidUser {
 		b.SendGroupMsg(msg.GroupID, "Invalid user target.")
 		return
 	}
@@ -333,7 +333,7 @@ func (cmd *PermCommand) handleUserRole(b *qbot.Bot, msg *qbot.Message) {
 		return
 	}
 
-	if err := db.UpdateUserPerm(targetID, level); err != nil {
+	if err := db.UpdateUserPerm(uint64(targetID), level); err != nil {
 		b.SendGroupMsg(msg.GroupID, "Failed to update user role: "+err.Error())
 	} else {
 		b.SendGroupMsg(msg.GroupID, fmt.Sprintf("Updated user %d role to %d", targetID, level))

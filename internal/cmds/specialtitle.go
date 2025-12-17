@@ -33,28 +33,26 @@ func (cmd *SpecialtitleCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *SpecialtitleCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
-	var targetUserID uint64
+func (cmd *SpecialtitleCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+	var targetUserID qbot.UserID
 	var title string
 
 	if len(msg.Array) == 3 {
 		// Case 1: Command + 2 arguments
 		// Check invalid inputs (Text + Text) or (At + At)
-		item1 := msg.Array[1]
-		item2 := msg.Array[2]
 
-		if at1 := item1.GetAtItem(); at1 != nil {
-			targetUserID = at1.TargetID
-			if txt2 := item2.GetTextItem(); txt2 != nil {
-				title = txt2.Content
+		if msg.Array[1].Type() == qbot.AtType {
+			targetUserID = msg.Array[1].At()
+			if msg.Array[2].Type() == qbot.TextType {
+				title = msg.Array[2].Text()
 			} else {
 				b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "Arguments MUST be one @user and one Text title")
 				return
 			}
-		} else if at2 := item2.GetAtItem(); at2 != nil {
-			targetUserID = at2.TargetID
-			if txt1 := item1.GetTextItem(); txt1 != nil {
-				title = txt1.Content
+		} else if msg.Array[2].Type() == qbot.AtType {
+			targetUserID = msg.Array[2].At()
+			if msg.Array[1].Type() == qbot.TextType {
+				title = msg.Array[1].Text()
 			} else {
 				b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "Arguments MUST be one @user and one Text title")
 				return
@@ -68,15 +66,14 @@ func (cmd *SpecialtitleCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	} else if len(msg.Array) == 2 {
 		// Case 2: Command + 1 argument
 		// The argument must be Text
-		item := msg.Array[1]
-		if txt := item.GetTextItem(); txt != nil {
+		if msg.Array[1].Type() == qbot.TextType {
 			// Check if the text looks like a mention (e.g. "@123456")
-			if strings.HasPrefix(txt.Content, "@") && isNumeric(txt.Content[1:]) {
+			if strings.HasPrefix(msg.Array[1].Text(), "@") && isNumeric(msg.Array[1].Text()[1:]) {
 				b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "Arguments MUST be one @user and one Text title. If you are trying to mention a user, please ensure it is a valid mention.")
 				return
 			}
 
-			title = txt.Content
+			title = msg.Array[1].Text()
 			targetUserID = msg.UserID
 		} else {
 			b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "When setting title for self, please provide text only")

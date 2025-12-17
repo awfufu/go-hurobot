@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/awfufu/qbot"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,8 +31,8 @@ type yamlConfig struct {
 
 	// 权限配置
 	Permissions struct {
-		MasterID uint64 `yaml:"master_id"`
-		BotID    uint64 `yaml:"bot_id"`
+		MasterID qbot.UserID `yaml:"master_id"`
+		BotID    qbot.UserID `yaml:"bot_id"`
 	} `yaml:"permissions"`
 
 	// 其他配置

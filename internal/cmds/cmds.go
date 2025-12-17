@@ -6,16 +6,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/shlex"
-
 	"github.com/awfufu/go-hurobot/internal/config"
 	"github.com/awfufu/go-hurobot/internal/db"
 	"github.com/awfufu/qbot"
+	"github.com/google/shlex"
 )
 
 type command interface {
 	Self() *cmdBase
-	Exec(b *qbot.Bot, msg *qbot.Message)
+	Exec(b *qbot.Sender, msg *qbot.Message)
 }
 
 type cmdBase struct {
@@ -41,7 +40,6 @@ func init() {
 		"fx":           NewErCommand(),
 		"group":        NewGroupCommand(),
 		"perm":         NewPermCommand(),
-		"psql":         NewPsqlCommand(),
 		"sh":           NewShCommand(),
 		"specialtitle": NewSpecialtitleCommand(),
 		"which":        NewWhichCommand(),
@@ -93,7 +91,7 @@ func InitCommandPermissions() {
 	}
 }
 
-func HandleCommand(b *qbot.Bot, msg *qbot.Message) {
+func HandleCommand(b *qbot.Sender, msg *qbot.Message) {
 	cmdName, argsItems, raw := parseCmd(msg)
 
 	if cmdName == "" {
@@ -116,9 +114,9 @@ func HandleCommand(b *qbot.Bot, msg *qbot.Message) {
 	// parse arguments
 	var args []qbot.MsgItem
 	if cmdBase.NeedRawMsg {
-		args = []qbot.MsgItem{&qbot.TextItem{Content: cmdName}}
+		args = []qbot.MsgItem{qbot.TextItem(cmdName)}
 		if len(raw) > 0 {
-			args = append(args, &qbot.TextItem{Content: raw})
+			args = append(args, qbot.TextItem(raw))
 		}
 	} else {
 		// New logic: commands are strictly TextItem first.
@@ -127,17 +125,17 @@ func HandleCommand(b *qbot.Bot, msg *qbot.Message) {
 		args = make([]qbot.MsgItem, 0, len(msg.Array)+len(argsItems))
 
 		// Add command name
-		args = append(args, &qbot.TextItem{Content: cmdName})
+		args = append(args, qbot.TextItem(cmdName))
 
 		// Add parsed args
 		for _, item := range argsItems {
-			if t, ok := item.(*qbot.TextItem); ok {
-				parts, err := shlex.Split(t.Content)
+			if t, ok := item.(qbot.TextItem); ok {
+				parts, err := shlex.Split(t.String())
 				if err != nil {
 					return
 				}
 				for _, part := range parts {
-					args = append(args, &qbot.TextItem{Content: part})
+					args = append(args, qbot.TextItem(part))
 				}
 			} else {
 				args = append(args, item)
@@ -178,11 +176,11 @@ func parseCmd(msg *qbot.Message) (string, []qbot.MsgItem, string) {
 		return "", nil, ""
 	}
 
-	item, ok := msg.Array[0].(*qbot.TextItem)
+	item, ok := msg.Array[0].(qbot.TextItem)
 	if !ok {
 		return "", nil, ""
 	}
-	content := item.Content
+	content := string(item)
 
 	// Skip leading spaces
 	offset := 0
@@ -234,7 +232,7 @@ func parseCmd(msg *qbot.Message) (string, []qbot.MsgItem, string) {
 	if idx != -1 {
 		argContent := rest[idx+1:]
 		if len(argContent) > 0 {
-			args = append(args, &qbot.TextItem{Content: argContent})
+			args = append(args, qbot.TextItem(argContent))
 		}
 	}
 
@@ -252,19 +250,17 @@ func isHelpRequest(args []qbot.MsgItem) bool {
 		return false
 	}
 	firstArg := args[0]
-	if t, ok := firstArg.(*qbot.TextItem); ok {
-		return t.Content == "-h" || t.Content == "-?" || t.Content == "--help"
+	if t, ok := firstArg.(qbot.TextItem); ok {
+		return t == "-h" || t == "-?" || t == "--help"
 	}
 	return false
 }
 
 func getCmdPermLevel(cmdName string) config.Permission {
-	// Deprecated or can read from DB for default if permission struct changes
-	// For now, logic handled in checkCmdPermission
 	return config.Master
 }
 
-func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
+func checkCmdPermission(cmdName string, userID qbot.UserID, groupID qbot.GroupID) bool {
 	// 1. Master Bypass
 	if userID == config.Cfg.Permissions.MasterID {
 		return true
@@ -288,7 +284,7 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 	}
 
 	// 3. User Special List Check
-	if slices.Contains(specialUsers, userID) {
+	if slices.Contains(specialUsers, uint64(userID)) {
 		if isWhitelistUsers == 1 {
 			// Whitelist mode: User in list -> Allow
 			return true
@@ -318,7 +314,7 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 	}
 
 	// 5. Group Special List Check
-	if slices.Contains(specialGroups, groupID) {
+	if slices.Contains(specialGroups, uint64(groupID)) {
 		if isWhitelistGroup == 1 {
 			// Whitelist mode: Group in list -> Allow
 			return true
@@ -330,12 +326,12 @@ func checkCmdPermission(cmdName string, userID, groupID uint64) bool {
 	return true
 }
 
-func GetUserPermission(userID uint64) config.Permission {
+func GetUserPermission(userID qbot.UserID) config.Permission {
 	if userID == config.Cfg.Permissions.MasterID {
 		return config.Master
 	}
 
-	perm := db.GetUserPerm(userID)
+	perm := db.GetUserPerm(uint64(userID))
 	switch perm {
 	case 0:
 		return config.Guest
@@ -375,8 +371,8 @@ func encodeSpecialChars(raw string) string {
 	return replacer.Replace(raw)
 }
 
-func str2uin64(s string) uint64 {
-	value, err := strconv.ParseUint(s, 10, 64)
+func str2int64(s string) int64 {
+	value, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0
 	}

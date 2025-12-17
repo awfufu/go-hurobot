@@ -78,7 +78,7 @@ func (cmd *ShCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *ShCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *ShCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	// For NeedRawMsg, msg.Array[1] contains the raw arguments string.
 	// But let's verify if we need parsing for --reset
 	// The original code checked args[1] == "--reset".
@@ -92,8 +92,8 @@ func (cmd *ShCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 	}
 
 	rawArgs := ""
-	if txt := msg.Array[1].GetTextItem(); txt != nil {
-		rawArgs = txt.Content
+	if msg.Array[1].Type() == qbot.TextType {
+		rawArgs = msg.Array[1].Text()
 	}
 
 	isMaster := GetUserPermission(msg.UserID) == config.Master

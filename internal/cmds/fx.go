@@ -44,7 +44,7 @@ func (cmd *ErCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *ErCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *ErCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	if config.Cfg.ApiKeys.ExchangeRateAPIKey == "" {
 		return
 	}
@@ -56,8 +56,8 @@ func (cmd *ErCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
 
 	getText := func(i int) string {
 		if i < len(msg.Array) {
-			if txt := msg.Array[i].GetTextItem(); txt != nil {
-				return txt.Content
+			if msg.Array[i].Type() == qbot.TextType {
+				return msg.Array[i].Text()
 			}
 		}
 		return ""

@@ -30,7 +30,7 @@ func (cmd *DeleteCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *DeleteCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
+func (cmd *DeleteCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	if msg.ReplyID != 0 {
 		b.DeleteMsg(msg.ReplyID)
 		log.Printf("delete message %d", msg.ReplyID)

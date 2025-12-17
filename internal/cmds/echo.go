@@ -29,19 +29,6 @@ func (cmd *EchoCommand) Self() *cmdBase {
 	return &cmd.cmdBase
 }
 
-func (cmd *EchoCommand) Exec(b *qbot.Bot, msg *qbot.Message) {
-	result := make([]qbot.Segment, 0, 8)
-	for _, e := range msg.Array {
-		switch v := e.(type) {
-		case *qbot.TextItem:
-			result = append(result, qbot.Text(v.Content))
-		case *qbot.AtItem:
-			result = append(result, qbot.At(v.TargetID))
-		case *qbot.FaceItem:
-			result = append(result, qbot.Face(v.ID))
-		case *qbot.ImageItem:
-			result = append(result, qbot.Image(v.URL))
-		}
-	}
-	b.SendGroupMsg(msg.GroupID, result)
+func (cmd *EchoCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+	b.SendGroupMsg(msg.GroupID, msg.Array[1:])
 }
