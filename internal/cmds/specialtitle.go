@@ -11,29 +11,17 @@ const specialtitleHelpMsg string = `Set special title for group members.
 Usage: /specialtitle [@user] <title>
 Example: /specialtitle @user qwq`
 
-type SpecialtitleCommand struct {
-	cmdBase
+var specialtitleCommand *Command = &Command{
+	Name:       "specialtitle",
+	HelpMsg:    specialtitleHelpMsg,
+	Permission: getCmdPermLevel("specialtitle"),
+	NeedRawMsg: false,
+	MaxArgs:    3,
+	MinArgs:    2,
+	Exec:       execSpecialTitle,
 }
 
-func NewSpecialtitleCommand() *SpecialtitleCommand {
-	return &SpecialtitleCommand{
-		cmdBase: cmdBase{
-			Name:       "specialtitle",
-			HelpMsg:    specialtitleHelpMsg,
-			Permission: getCmdPermLevel("specialtitle"),
-
-			NeedRawMsg: false,
-			MaxArgs:    3,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *SpecialtitleCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *SpecialtitleCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execSpecialTitle(b *qbot.Sender, msg *qbot.Message) {
 	var targetUserID qbot.UserID
 	var title string
 
@@ -81,7 +69,7 @@ func (cmd *SpecialtitleCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 		}
 	} else {
 		// Should be handled by MaxArgs/MinArgs, but safe fallback
-		b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, cmd.HelpMsg)
+		b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, specialtitleHelpMsg)
 		return
 	}
 

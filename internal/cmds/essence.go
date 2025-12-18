@@ -7,29 +7,17 @@ import (
 const essenceHelpMsg string = `Manage essence messages.
 Usage: [Reply to a message] /essence [add|rm]`
 
-type EssenceCommand struct {
-	cmdBase
+var essenceCommand *Command = &Command{
+	Name:       "essence",
+	HelpMsg:    essenceHelpMsg,
+	Permission: getCmdPermLevel("essence"),
+	NeedRawMsg: false,
+	Exec:       execEssence,
 }
 
-func NewEssenceCommand() *EssenceCommand {
-	return &EssenceCommand{
-		cmdBase: cmdBase{
-			Name:       "essence",
-			HelpMsg:    essenceHelpMsg,
-			Permission: getCmdPermLevel("essence"),
-
-			NeedRawMsg: false,
-		},
-	}
-}
-
-func (cmd *EssenceCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *EssenceCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execEssence(b *qbot.Sender, msg *qbot.Message) {
 	if msg.ReplyID == 0 {
-		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		b.SendGroupMsg(msg.GroupID, essenceHelpMsg)
 		return
 	}
 
@@ -41,10 +29,10 @@ func (cmd *EssenceCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 			case "add":
 				b.SetGroupEssence(msg.ReplyID)
 			default:
-				b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+				b.SendGroupMsg(msg.GroupID, essenceHelpMsg)
 			}
 		} else {
-			b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+			b.SendGroupMsg(msg.GroupID, essenceHelpMsg)
 		}
 	} else {
 		b.SetGroupEssence(msg.ReplyID)

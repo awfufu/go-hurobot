@@ -25,29 +25,18 @@ Examples:
   /perm special draw user add @user
   /perm user @user admin`
 
-type PermCommand struct {
-	cmdBase
+var permCommand *Command = &Command{
+	Name:       "perm",
+	HelpMsg:    permHelpMsg,
+	Permission: config.Master,
+	NeedRawMsg: false,
+	MinArgs:    2,
+	Exec:       execPerm,
 }
 
-func NewPermCommand() *PermCommand {
-	return &PermCommand{
-		cmdBase: cmdBase{
-			Name:       "perm",
-			HelpMsg:    permHelpMsg,
-			Permission: config.Master, // Only master can manage permissions
-			NeedRawMsg: false,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *PermCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *PermCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execPerm(b *qbot.Sender, msg *qbot.Message) {
 	if len(msg.Array) < 2 {
-		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		b.SendGroupMsg(msg.GroupID, permHelpMsg)
 		return
 	}
 
@@ -63,17 +52,17 @@ func (cmd *PermCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	subCmd := getText(1)
 	switch subCmd {
 	case "set":
-		cmd.handleSet(b, msg)
+		handleSet(b, msg)
 	case "special":
-		cmd.handleSpecial(b, msg)
+		handleSpecial(b, msg)
 	case "user":
-		cmd.handleUserRole(b, msg)
+		handleUserRole(b, msg)
 	default:
 		b.SendGroupMsg(msg.GroupID, "Unknown subcommand: "+subCmd)
 	}
 }
 
-func (cmd *PermCommand) handleSet(b *qbot.Sender, msg *qbot.Message) {
+func handleSet(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
 			if msg.Array[i].Type() == qbot.TextType {
@@ -144,7 +133,7 @@ func (cmd *PermCommand) handleSet(b *qbot.Sender, msg *qbot.Message) {
 	}
 }
 
-func (cmd *PermCommand) handleSpecial(b *qbot.Sender, msg *qbot.Message) {
+func handleSpecial(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
 			if msg.Array[i].Type() == qbot.TextType {
@@ -288,7 +277,7 @@ func extractTargets(args []qbot.MsgItem, targetType string) []uint64 {
 	return targets
 }
 
-func (cmd *PermCommand) handleUserRole(b *qbot.Sender, msg *qbot.Message) {
+func handleUserRole(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
 			if msg.Array[i].Type() == qbot.TextType {

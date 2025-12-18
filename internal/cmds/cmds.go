@@ -12,43 +12,39 @@ import (
 	"github.com/google/shlex"
 )
 
-type command interface {
-	Self() *cmdBase
-	Exec(b *qbot.Sender, msg *qbot.Message)
-}
-
-type cmdBase struct {
+type Command struct {
 	Name       string            // Command name
 	HelpMsg    string            // Help message
 	Permission config.Permission // Permission requirement
 	NeedRawMsg bool
-	MaxArgs    int // Maximum number of arguments
-	MinArgs    int // Minimum number of arguments
+	MaxArgs    int                                     // Maximum number of arguments
+	MinArgs    int                                     // Minimum number of arguments
+	Exec       func(b *qbot.Sender, msg *qbot.Message) // Execute function
 }
 
 const commandPrefix = '/'
 
-var cmdMap map[string]command
+var cmdMap map[string]*Command
 
 func init() {
-	cmdMap = map[string]command{
-		"crypto":       NewCryptoCommand(),
-		"delete":       NewDeleteCommand(),
-		"draw":         NewDrawCommand(),
-		"echo":         NewEchoCommand(),
-		"essence":      NewEssenceCommand(),
-		"fx":           NewErCommand(),
-		"group":        NewGroupCommand(),
-		"perm":         NewPermCommand(),
-		"sh":           NewShCommand(),
-		"specialtitle": NewSpecialtitleCommand(),
-		"which":        NewWhichCommand(),
+	cmdMap = map[string]*Command{
+		"crypto":       cryptoCommand,
+		"delete":       deleteCommand,
+		"draw":         drawCommand,
+		"echo":         echoCommand,
+		"essence":      essenceCommand,
+		"fx":           erCommand,
+		"group":        groupCommand,
+		"perm":         permCommand,
+		"sh":           shCommand,
+		"specialtitle": specialtitleCommand,
+		"which":        whichCommand,
 	}
 }
 
 func InitCommandPermissions() {
 	for name, cmd := range cmdMap {
-		base := cmd.Self()
+		base := cmd
 
 		perm := db.GetCommandPermission(name)
 		if perm != nil {
@@ -103,7 +99,7 @@ func HandleCommand(b *qbot.Sender, msg *qbot.Message) {
 		return
 	}
 
-	cmdBase := cmd.Self()
+	cmdBase := cmd
 
 	// check permission
 	if !checkCmdPermission(cmdBase.Name, msg.UserID, msg.GroupID) {

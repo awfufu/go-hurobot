@@ -57,28 +57,16 @@ func truncateString(s string) string {
 	return s
 }
 
-type ShCommand struct {
-	cmdBase
+var shCommand *Command = &Command{
+	Name:       "sh",
+	HelpMsg:    shHelpMsg,
+	Permission: getCmdPermLevel("sh"),
+	NeedRawMsg: true,
+	MinArgs:    2,
+	Exec:       execSh,
 }
 
-func NewShCommand() *ShCommand {
-	return &ShCommand{
-		cmdBase: cmdBase{
-			Name:       "sh",
-			HelpMsg:    shHelpMsg,
-			Permission: getCmdPermLevel("sh"),
-
-			NeedRawMsg: true,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *ShCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *ShCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execSh(b *qbot.Sender, msg *qbot.Message) {
 	// For NeedRawMsg, msg.Array[1] contains the raw arguments string.
 	// But let's verify if we need parsing for --reset
 	// The original code checked args[1] == "--reset".

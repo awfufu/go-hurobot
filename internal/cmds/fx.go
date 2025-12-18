@@ -22,35 +22,23 @@ const erHelpMsg string = `Query foreign exchange rates.
 Usage: fx <from_currency> <to_currency>
 Example: fx CNY HKD`
 
-type ErCommand struct {
-	cmdBase
+var erCommand *Command = &Command{
+	Name:       "fx",
+	HelpMsg:    erHelpMsg,
+	Permission: getCmdPermLevel("fx"),
+	NeedRawMsg: false,
+	MaxArgs:    3,
+	MinArgs:    3,
+	Exec:       execEr,
 }
 
-func NewErCommand() *ErCommand {
-	return &ErCommand{
-		cmdBase: cmdBase{
-			Name:       "fx",
-			HelpMsg:    erHelpMsg,
-			Permission: getCmdPermLevel("fx"),
-
-			NeedRawMsg: false,
-			MaxArgs:    3,
-			MinArgs:    3,
-		},
-	}
-}
-
-func (cmd *ErCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *ErCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execEr(b *qbot.Sender, msg *qbot.Message) {
 	if config.Cfg.ApiKeys.ExchangeRateAPIKey == "" {
 		return
 	}
 
 	if len(msg.Array) < 3 {
-		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		b.SendGroupMsg(msg.GroupID, erHelpMsg)
 		return
 	}
 

@@ -75,29 +75,17 @@ Examples:
   /crypto BTC
   /crypto BTC USD`
 
-type CryptoCommand struct {
-	cmdBase
+var cryptoCommand *Command = &Command{
+	Name:       "crypto",
+	HelpMsg:    cryptoHelpMsg,
+	Permission: getCmdPermLevel("crypto"),
+	NeedRawMsg: false,
+	MaxArgs:    3,
+	MinArgs:    2,
+	Exec:       execCrypto,
 }
 
-func NewCryptoCommand() *CryptoCommand {
-	return &CryptoCommand{
-		cmdBase: cmdBase{
-			Name:       "crypto",
-			HelpMsg:    cryptoHelpMsg,
-			Permission: getCmdPermLevel("crypto"),
-
-			NeedRawMsg: false,
-			MaxArgs:    3,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *CryptoCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *CryptoCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execCrypto(b *qbot.Sender, msg *qbot.Message) {
 	if len(msg.Array) == 2 {
 		if msg.Array[1].Type() == qbot.TextType {
 			coin := strings.ToUpper(msg.Array[1].Text())
@@ -116,7 +104,7 @@ func (cmd *CryptoCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 			handleCryptoCurrencyPair(b, msg, coin, currency)
 		}
 	} else {
-		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		b.SendGroupMsg(msg.GroupID, cryptoHelpMsg)
 	}
 }
 

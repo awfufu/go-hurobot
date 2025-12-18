@@ -18,6 +18,15 @@ Usage: /draw <prompt> [--size <size>]
 Supported sizes: 1328x1328, 1584x1056, 1140x1472, 1664x928, 928x1664
 Example: /draw a cat --size 1328x1328`
 
+var drawCommand *Command = &Command{
+	Name:       "draw",
+	HelpMsg:    drawHelpMsg,
+	Permission: getCmdPermLevel("draw"),
+	NeedRawMsg: false,
+	MinArgs:    2,
+	Exec:       execDraw,
+}
+
 type ImageGenerationRequest struct {
 	Model         string  `json:"model"`
 	Prompt        string  `json:"prompt"`
@@ -36,28 +45,7 @@ type ImageGenerationResponse struct {
 	Seed int64 `json:"seed"`
 }
 
-type DrawCommand struct {
-	cmdBase
-}
-
-func NewDrawCommand() *DrawCommand {
-	return &DrawCommand{
-		cmdBase: cmdBase{
-			Name:       "draw",
-			HelpMsg:    drawHelpMsg,
-			Permission: getCmdPermLevel("draw"),
-
-			NeedRawMsg: false,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *DrawCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *DrawCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execDraw(b *qbot.Sender, msg *qbot.Message) {
 	if config.Cfg.ApiKeys.DrawApiKey == "" {
 		b.SendGroupMsg(msg.GroupID, "No API key")
 		return

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"github.com/awfufu/go-hurobot/internal/cmds"
 	"github.com/awfufu/go-hurobot/internal/config"
 	"github.com/awfufu/go-hurobot/internal/db"
@@ -28,6 +30,8 @@ func main() {
 					cmds.HandleCommand(sender, msg)
 				}
 			}()
+		case err := <-receiver.Error():
+			log.Fatal(err)
 		}
 	}
 }

@@ -15,28 +15,16 @@ Examples:
   /group rename awa
   /group op @user1 @user2 ...`
 
-type GroupCommand struct {
-	cmdBase
+var groupCommand *Command = &Command{
+	Name:       "group",
+	HelpMsg:    groupHelpMsg,
+	Permission: getCmdPermLevel("group"),
+	NeedRawMsg: false,
+	MinArgs:    2,
+	Exec:       execGroup,
 }
 
-func NewGroupCommand() *GroupCommand {
-	return &GroupCommand{
-		cmdBase: cmdBase{
-			Name:       "group",
-			HelpMsg:    groupHelpMsg,
-			Permission: getCmdPermLevel("group"),
-
-			NeedRawMsg: false,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *GroupCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *GroupCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execGroup(b *qbot.Sender, msg *qbot.Message) {
 	getText := func(i int) string {
 		if i < len(msg.Array) {
 			if msg.Array[i].Type() == qbot.TextType {
@@ -47,7 +35,7 @@ func (cmd *GroupCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	}
 
 	if len(msg.Array) < 2 {
-		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		b.SendGroupMsg(msg.GroupID, groupHelpMsg)
 		return
 	}
 

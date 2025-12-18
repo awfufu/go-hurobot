@@ -26,29 +26,17 @@ const whichHelpMsg string = `Query abbreviation meanings.
 Usage: /which <text>
 Example: /which yyds`
 
-type WhichCommand struct {
-	cmdBase
+var whichCommand *Command = &Command{
+	Name:       "which",
+	HelpMsg:    whichHelpMsg,
+	Permission: getCmdPermLevel("which"),
+	NeedRawMsg: false,
+	MaxArgs:    2,
+	MinArgs:    2,
+	Exec:       execWhich,
 }
 
-func NewWhichCommand() *WhichCommand {
-	return &WhichCommand{
-		cmdBase: cmdBase{
-			Name:       "which",
-			HelpMsg:    whichHelpMsg,
-			Permission: getCmdPermLevel("which"),
-
-			NeedRawMsg: false,
-			MaxArgs:    2,
-			MinArgs:    2,
-		},
-	}
-}
-
-func (cmd *WhichCommand) Self() *cmdBase {
-	return &cmd.cmdBase
-}
-
-func (cmd *WhichCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
+func execWhich(b *qbot.Sender, msg *qbot.Message) {
 	// Check for non-text type parameters
 	for i := 1; i < len(msg.Array); i++ {
 		str := ""
@@ -70,7 +58,7 @@ func (cmd *WhichCommand) Exec(b *qbot.Sender, msg *qbot.Message) {
 	text := strings.Join(parts, " ")
 
 	if text == "" {
-		b.SendGroupMsg(msg.GroupID, cmd.HelpMsg)
+		b.SendGroupMsg(msg.GroupID, whichHelpMsg)
 		return
 	}
 
