@@ -40,6 +40,7 @@ func init() {
 		"specialtitle": specialtitleCommand,
 		"which":        whichCommand,
 		"calc":         calcCommand,
+		"wa":           waCommand,
 	}
 }
 

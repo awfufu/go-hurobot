@@ -22,6 +22,7 @@ type yamlConfig struct {
 		DrawApiKey         string `yaml:"draw_api_key"`
 		ExchangeRateAPIKey string `yaml:"exchange_rate_api_key"`
 		OkxMirrorAPIKey    string `yaml:"okx_mirror_api_key"`
+		WolframAlphaAppID  string `yaml:"wolfram_alpha_app_id"`
 	} `yaml:"api_keys"`
 
 	// SQLite 配置

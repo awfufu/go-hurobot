@@ -5,6 +5,7 @@ api_keys:
   draw_api_key: SILICONFLOW_API_KEY
   exchange_rate_api_key: EXCHANGE_RATE_API_KEY
   okx_mirror_api_key: OKX_MIRROR_API_KEY
+  wolfram_alpha_app_id: WOLFRAM_ALPHA_APP_ID
 
 sqlite:
   path: ./db/bot.db
