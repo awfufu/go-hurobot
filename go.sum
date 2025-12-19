@@ -1,3 +1,5 @@
+github.com/Knetic/govaluate v3.0.0+incompatible h1:7o6+MAPhYTCF0+fdvoz1xDedhRb4f6s9Tn1Tt7/WTEg=
+github.com/Knetic/govaluate v3.0.0+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/awfufu/qbot v0.2.2 h1:rl7+j6JNjGzjjO5AHNqRXdM09Gwc+mQGsgBerJYVfVg=
 github.com/awfufu/qbot v0.2.2/go.mod h1:t6pYm54N7/YrxoMYFerZe2qx0t505iPeQQpTJvTNY+8=
 github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 h1:El6M4kTTCOh6aBiKaUGG7oYTSPP8MxqL4YI3kZKwcP4=

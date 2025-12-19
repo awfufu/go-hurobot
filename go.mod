@@ -3,6 +3,7 @@ module github.com/awfufu/go-hurobot
 go 1.25.5
 
 require (
+	github.com/Knetic/govaluate v3.0.0+incompatible
 	github.com/awfufu/qbot v0.2.2
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	gopkg.in/yaml.v3 v3.0.1

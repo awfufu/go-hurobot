@@ -39,6 +39,7 @@ func init() {
 		"sh":           shCommand,
 		"specialtitle": specialtitleCommand,
 		"which":        whichCommand,
+		"calc":         calcCommand,
 	}
 }
 
