@@ -46,6 +46,7 @@ func init() {
 		"which":        whichCommand,
 		"calc":         calcCommand,
 		"wa":           waCommand,
+		"forward":      forwardCommand,
 	}
 }
 
