@@ -1,10 +1,15 @@
 package cmds
 
 import (
+	"fmt"
 	"log"
 	"slices"
 	"strconv"
 	"strings"
+
+	"os"
+	"os/exec"
+	"path/filepath"
 
 	"github.com/awfufu/go-hurobot/internal/config"
 	"github.com/awfufu/go-hurobot/internal/db"
@@ -98,6 +103,7 @@ func HandleCommand(b *qbot.Sender, msg *qbot.Message) {
 
 	cmd, exists := cmdMap[cmdName]
 	if !exists {
+		tryFallbackCommand(b, msg, cmdName, raw)
 		return
 	}
 
@@ -143,6 +149,9 @@ func HandleCommand(b *qbot.Sender, msg *qbot.Message) {
 	if args == nil {
 		return
 	}
+
+	b.SendGroupPoke(msg.GroupID, msg.UserID)
+
 	// argCount logic simplified as there is no skip
 	argCount := len(args)
 	if (cmdBase.MinArgs > 0 && argCount < cmdBase.MinArgs) || (cmdBase.MaxArgs > 0 && argCount > cmdBase.MaxArgs) {
@@ -375,4 +384,86 @@ func str2int64(s string) int64 {
 		return 0
 	}
 	return value
+}
+
+func tryFallbackCommand(b *qbot.Sender, msg *qbot.Message, cmdName string, rawArgs string) {
+	// Security check: cmdName should be a simple filename, no path traversal
+	if strings.Contains(cmdName, "/") || strings.Contains(cmdName, "\\") || strings.Contains(cmdName, "..") {
+		return
+	}
+
+	path := filepath.Join("cmds", cmdName)
+	info, err := os.Stat(path)
+	if err != nil {
+		return // Not found or error
+	}
+	if info.IsDir() {
+		return // Is directory
+	}
+	// Check if executable? os.Stat doesn't easily tell us, but we can try to exec.
+	// On Linux checking Mode() & 0111 is a hint, but attempting to run is robust.
+
+	// Parse args
+	var args []string
+	if rawArgs != "" {
+		// Use shlex to split arguments like a shell
+		parts, err := shlex.Split(rawArgs)
+		if err != nil {
+			b.SendGroupMsg(msg.GroupID, "Error parsing arguments: "+err.Error())
+			return
+		}
+		args = parts
+	}
+
+	// Prepare command
+	cmd := exec.Command(path, args...)
+
+	// Inject Environment Variables
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env,
+		fmt.Sprintf("QBOT_CHAT_TYPE=%d", msg.ChatType),
+		fmt.Sprintf("QBOT_MSG_ID=%d", msg.MsgID),
+		fmt.Sprintf("QBOT_REPLY_ID=%d", msg.ReplyID),
+		fmt.Sprintf("QBOT_USER_ID=%d", msg.UserID),
+		"QBOT_NAME="+msg.Name,
+		fmt.Sprintf("QBOT_TIME=%d", msg.Time),
+		fmt.Sprintf("QBOT_GROUP_ID=%d", msg.GroupID),
+		"QBOT_GROUP_CARD="+msg.GroupCard,
+		fmt.Sprintf("QBOT_GROUP_ROLE=%d", msg.GroupRole),
+	)
+
+	// No special env or dir? "find work dir's ./cmds/" implies CWD is the bot's CWD.
+	// That is default for exec.Command.
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	if err != nil {
+		log.Printf("Fallback cmd %s failed: %v", cmdName, err)
+		// If output is not empty, show it, otherwise show error
+		msgContent := fmt.Sprintf("Error: %v", err)
+		if len(outputStr) > 0 {
+			msgContent += "\nOutput:\n" + truncateFallbackOutput(outputStr)
+		}
+		b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, msgContent)
+		return
+	}
+
+	if len(outputStr) > 0 {
+		b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, truncateFallbackOutput(outputStr))
+	} else {
+		// No output, just verify success? maybe silent if success?
+		// User requirement "if not exist... ignore", but here it existed and ran.
+		// Usually a confused user wants feedback.
+		// "ok" or nothing? sh command returns "ok" only if empty output.
+		b.SendGroupReplyMsg(msg.GroupID, msg.MsgID, "ok")
+	}
+}
+
+func truncateFallbackOutput(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 4000 {
+		return s[:4000] + "... (truncated)"
+	}
+	return s
 }
